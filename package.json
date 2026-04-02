@@ -1,0 +1,20 @@
+{
+  "name": "cwc-fee-strategy-model",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CWC Fee Strategy Model — internal planning tool",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.12.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "@vitejs/plugin-react": "^4.3.0"
+  }
+}
