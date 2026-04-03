@@ -115,21 +115,20 @@ const pct = (n) => {
 function SliderField({ label, value, min, max, step, onChange, prefix, note, unit }) {
   const [lv, setLv] = useState(String(value));
   useEffect(() => { setLv(String(value)); }, [value]);
-  const display = prefix === '$' ? fmt(value) : unit ? value + unit : value;
+  const suffix = unit ? ' ' + unit : '';
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
         <label style={{ fontSize:13, fontWeight:600, color:GRAY700 }}>{label}</label>
-        <span style={{ fontSize:16, fontWeight:700, color:GRAY900 }}>{display}</span>
+        {note && <span style={{ fontSize:11, color:GRAY500, fontStyle:'italic' }}>{note}</span>}
       </div>
       <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-        <input type="range" min={min} max={max} step={step||1} value={value}
-          onChange={e => onChange(Number(e.target.value))} style={{ flex:1 }} />
-        <input type="number" value={lv} onChange={e => setLv(e.target.value)}
+        {prefix === '$' && <span style={{ fontSize:13, color:GRAY500 }}>$</span>}
+        <input type="number" value={lv} onChange={e => { setLv(e.target.value); const v = Number(e.target.value); if (!isNaN(v)) onChange(v); }}
           onBlur={() => { let v=Number(lv); if(isNaN(v))v=min; v=Math.max(min,Math.min(max,v)); setLv(String(v)); onChange(v); }}
-          style={{ width:80, padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right' }} />
+          style={{ width:'100%', maxWidth:160, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:14, fontWeight:600, textAlign:'right', fontFamily:"'Inter',sans-serif" }} />
+        {suffix && <span style={{ fontSize:13, color:GRAY500 }}>{suffix}</span>}
       </div>
-      {note && <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:2 }}>{note}</div>}
     </div>
   );
 }
@@ -891,8 +890,8 @@ function PartnersGrowthTab({ state, calc, set, setPartnerCount, setTierFee, edit
             </div>
             {editTierFees && <input type="number" value={state.tierFees[i]} onChange={e=>setTierFee(i,Number(e.target.value))}
               style={{ width:90, padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right' }} />}
-            <input type="range" min={0} max={15} value={state.partnerCounts[i]} onChange={e=>setPartnerCount(i,Number(e.target.value))} style={{ flex:1 }} />
-            <div style={{ width:40, fontSize:22, fontWeight:700, textAlign:'center', color:BLUE }}>{state.partnerCounts[i]}</div>
+            <input type="number" min={0} value={state.partnerCounts[i]} onChange={e=>setPartnerCount(i,Math.max(0,Number(e.target.value)||0))}
+              style={{ width:70, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:16, fontWeight:700, textAlign:'center', color:BLUE, fontFamily:"'Inter',sans-serif" }} />
             <div style={{ width:100, fontSize:12, color:GRAY500, textAlign:'right' }}>
               {fmt(state.partnerCounts[i]*state.tierFees[i])}<br/>{state.partnerCounts[i]*tier.instructors} instr.
             </div>
@@ -916,10 +915,9 @@ function PartnersGrowthTab({ state, calc, set, setPartnerCount, setTierFee, edit
                 onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], fee: Number(e.target.value) }; set('customTiers', next); }}
                 style={{ width:80, padding:'2px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />
             </div>
-            <input type="range" min={0} max={15} value={ct.count || 0}
-              onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], count: Number(e.target.value) }; set('customTiers', next); }}
-              style={{ flex:1 }} />
-            <div style={{ width:40, fontSize:22, fontWeight:700, textAlign:'center', color:PURPLE }}>{ct.count || 0}</div>
+            <input type="number" min={0} value={ct.count || 0}
+              onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], count: Math.max(0, Number(e.target.value)||0) }; set('customTiers', next); }}
+              style={{ width:70, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:16, fontWeight:700, textAlign:'center', color:PURPLE, fontFamily:"'Inter',sans-serif" }} />
             <div style={{ width:100, fontSize:12, color:GRAY500, textAlign:'right' }}>
               {fmt((ct.count||0)*ct.fee)}<br/>{(ct.count||0)*ct.instructors} instr.
             </div>
