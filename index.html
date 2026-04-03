@@ -58,8 +58,12 @@ const defaults = {
   feeEscalation: 3,         // % annual license fee increase
   ippFeeYr2: 2000, ippFeeYr3: 2000, ippFeeYr4: 2000, ippFeeYr5: 2000,
   cohortFeeEscalation: 2,   // % annual cohort fee increase
-  costInflation: 3,         // % annual fixed+hidden cost inflation
+  costInflation: 3,         // % annual fixed+hidden cost inflation (non-staff)
   variableCostInflation: 2, // % annual variable cost inflation
+  staffRaiseRate: 5,        // % annual staff cost increase
+  reaccredCost: 30000,      // reaccreditation cost (one-time)
+  reaccredYear: 2029,       // calendar year of next reaccreditation
+  forecastStartYear: 2025,  // calendar year for Year 1
   pipelineGrowth: 10,       // % annual growth in new IPP instructors
   grantGrowthRate: 0,       // % annual grant revenue change
   forecastScenario: 'none', // none | pilot | consortium | sponsored
@@ -317,8 +321,12 @@ function App() {
         totalRev -= gap;
       }
 
-      // Costs
-      const fixedTotal = (s.costStaff + s.costLMS + s.costAccreditation + s.costSystems + s.costOverhead) * costInf;
+      // Costs — staff gets its own raise rate, others get general inflation
+      const staffInf = Math.pow(1 + s.staffRaiseRate / 100, yr);
+      const calendarYear = s.forecastStartYear + yr;
+      const isReaccredYear = calendarYear === s.reaccredYear;
+      const accredCost = s.costAccreditation * costInf + (isReaccredYear ? s.reaccredCost : 0);
+      const fixedTotal = s.costStaff * staffInf + s.costLMS * costInf + accredCost + s.costSystems * costInf + s.costOverhead * costInf;
       const newPartnersFromPipeline = Math.round(newIPP * (s.pctIPPtoLicense / 100));
       const hiddenTotal = (s.costSalesOutreach + s.costQACompliance + s.costSysMaintenance) * costInf
         + s.costOnboarding * newPartnersFromPipeline * varCostInf;
@@ -336,7 +344,8 @@ function App() {
 
       years.push({
         year: yr + 1,
-        label: 'Year ' + (yr + 1),
+        calendarYear,
+        label: calendarYear.toString(),
         partners,
         newIPP,
         licenseRevenue: licRev,
@@ -348,6 +357,7 @@ function App() {
         fixedCost: fixedTotal,
         hiddenCost: hiddenTotal,
         variableCost: ippCost + cohortCost + certCost,
+        reaccredSpike: isReaccredYear ? s.reaccredCost : 0,
         totalCost,
         netMargin,
         marginPct: totalRev > 0 ? netMargin / totalRev : 0,
@@ -787,7 +797,7 @@ function CostsTab({ state, calc, set }) {
         <SectionDivider label="Fixed Costs (Annual)" />
         <SliderField label="Staff base time" value={state.costStaff} min={0} max={50000} step={500} onChange={v=>set('costStaff',v)} prefix="$" />
         <SliderField label="LMS (Thinkific)" value={state.costLMS} min={0} max={5000} step={50} onChange={v=>set('costLMS',v)} prefix="$" />
-        <SliderField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={10000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
+        <SliderField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={15000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
         <SliderField label="Airtable + Systems" value={state.costSystems} min={0} max={5000} step={50} onChange={v=>set('costSystems',v)} prefix="$" />
         <SliderField label="Overhead / Indirect" value={state.costOverhead} min={0} max={10000} step={100} onChange={v=>set('costOverhead',v)} prefix="$" />
         <div style={{ fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:8 }}>Fixed Total: {fmt(calc.fixedTotal)}</div>
@@ -998,7 +1008,10 @@ function ForecastTab({ state, calc, forecast, set }) {
       const parts = coh * s.avgParticipants;
       const overages = Math.max(0, parts - partners*15);
       const totalRev = licRev + newIPP*(ippFees[yr]||ippFees[4]) + coh*s.feeCohort*cohortFeeEsc + overages*s.feeCertOverage + s.feeGrant*grantGrow;
-      const fixedT = (s.costStaff+s.costLMS+s.costAccreditation+s.costSystems+s.costOverhead)*costInf;
+      const staffInf = Math.pow(1 + s.staffRaiseRate / 100, yr);
+      const calYr = s.forecastStartYear + yr;
+      const accredC = s.costAccreditation*costInf + (calYr===s.reaccredYear?s.reaccredCost:0);
+      const fixedT = s.costStaff*staffInf + s.costLMS*costInf + accredC + s.costSystems*costInf + s.costOverhead*costInf;
       const newP = Math.round(newIPP*(s.pctIPPtoLicense/100));
       const hiddenT = (s.costSalesOutreach+s.costQACompliance+s.costSysMaintenance)*costInf + s.costOnboarding*newP*varCostInf;
       const totalCost = fixedT + hiddenT + newIPP*s.costPerIPP*varCostInf + coh*s.costPerCohort*varCostInf + parts*s.costPerCert*varCostInf;
@@ -1049,11 +1062,35 @@ function ForecastTab({ state, calc, forecast, set }) {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
           <SliderField label="License fee escalation" value={state.feeEscalation} min={0} max={15} step={0.5} onChange={v=>set('feeEscalation',v)} unit="%/yr" note="Applied to all tier fees annually" />
           <SliderField label="Cohort fee escalation" value={state.cohortFeeEscalation} min={0} max={15} step={0.5} onChange={v=>set('cohortFeeEscalation',v)} unit="%/yr" />
-          <SliderField label="Fixed cost inflation" value={state.costInflation} min={0} max={15} step={0.5} onChange={v=>set('costInflation',v)} unit="%/yr" note="Staff, LMS, accreditation, overhead" />
+          <SliderField label="Staff raise rate" value={state.staffRaiseRate} min={0} max={15} step={0.5} onChange={v=>set('staffRaiseRate',v)} unit="%/yr" note="Annual staff cost increase (raises, benefits)" />
+          <SliderField label="Other fixed cost inflation" value={state.costInflation} min={0} max={15} step={0.5} onChange={v=>set('costInflation',v)} unit="%/yr" note="LMS, systems, overhead (not staff or ANSI)" />
           <SliderField label="Variable cost inflation" value={state.variableCostInflation} min={0} max={15} step={0.5} onChange={v=>set('variableCostInflation',v)} unit="%/yr" note="IPP delivery, cohort processing, certs" />
           <SliderField label="Pipeline growth (new IPP/yr)" value={state.pipelineGrowth} min={-20} max={50} step={1} onChange={v=>set('pipelineGrowth',v)} unit="%/yr" note="Annual growth in new IPP instructors" />
           <SliderField label="Grant revenue growth" value={state.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%/yr" />
         </div>
+        <SectionDivider label="Reaccreditation / ANSI" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, marginBottom:8 }}>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Forecast start year</label>
+            <input type="number" value={state.forecastStartYear} onChange={e=>set('forecastStartYear',Number(e.target.value))}
+              style={{ width:'100%', padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Reaccreditation year</label>
+            <input type="number" value={state.reaccredYear} onChange={e=>set('reaccredYear',Number(e.target.value))}
+              style={{ width:'100%', padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Reaccreditation cost</label>
+            <input type="number" value={state.reaccredCost} onChange={e=>set('reaccredCost',Number(e.target.value))}
+              style={{ width:'100%', padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
+          </div>
+        </div>
+        {state.reaccredYear >= state.forecastStartYear && state.reaccredYear < state.forecastStartYear + 5 && (
+          <div style={{ fontSize:12, color:AMBER, fontWeight:600, marginBottom:8 }}>
+            {'\u26A0'} Reaccreditation ({fmt(state.reaccredCost)}) hits in {state.reaccredYear} (Year {state.reaccredYear - state.forecastStartYear + 1} of forecast)
+          </div>
+        )}
         <SectionDivider label="IPP Fee Schedule (by year)" />
         <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8 }}>
           <div><div style={{ fontSize:11, color:GRAY500, marginBottom:4 }}>Year 1</div><div style={{ fontSize:14, fontWeight:700, color:TEAL }}>{fmt(state.feeIPP)}</div><div style={{ fontSize:10, color:GRAY400 }}>Set in Costs tab</div></div>
@@ -1191,6 +1228,9 @@ function ForecastTab({ state, calc, forecast, set }) {
               <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Fixed Costs</td>
                 {years.map(y => <td key={y.year} style={tdS}>{fmt(y.fixedCost)}</td>)}
                 <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.fixedCost,0))}</td></tr>
+              {years.some(y=>y.reaccredSpike>0) && <tr style={{ background:'#fffbeb' }}><td style={{ ...tdS, textAlign:'left', fontWeight:600, color:AMBER }}>{'\u26A0'} Reaccreditation (included above)</td>
+                {years.map(y => <td key={y.year} style={{ ...tdS, color:y.reaccredSpike>0?AMBER:GRAY400 }}>{y.reaccredSpike>0?fmt(y.reaccredSpike):'\u2014'}</td>)}
+                <td style={{ ...tdS, fontWeight:700, color:AMBER }}>{fmt(years.reduce((s,y)=>s+y.reaccredSpike,0))}</td></tr>}
               <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Hidden Costs</td>
                 {years.map(y => <td key={y.year} style={tdS}>{fmt(y.hiddenCost)}</td>)}
                 <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.hiddenCost,0))}</td></tr>
