@@ -76,6 +76,7 @@ const TIERS = [
 const defaults = {
   partnerCounts: [5, 0, 0, 0, 0, 0, 0],
   tierFees: [4050, 6800, 9000, 11310, 13120, 14940, 22750],
+  customTiers: [],  // array of { label: string, instructors: number, fee: number, count: number }
   costStaff: 20000, costLMS: 600, costAccreditation: 3000, costSystems: 500,
   costPerIPP: 400, costPerCohort: 300, costPerCert: 10,
   feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
@@ -291,10 +292,11 @@ function App() {
 
   const calc = useMemo(() => {
     const s = state;
+    const ct = s.customTiers || [];
     const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
-    const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0);
-    const totalInstructors = s.partnerCounts.reduce((sum, c, i) => sum + c * TIERS[i].instructors, 0);
-    const licenseRevenue = s.partnerCounts.reduce((sum, c, i) => sum + c * s.tierFees[i], 0);
+    const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0) + ct.reduce((a, t) => a + (t.count || 0), 0);
+    const totalInstructors = s.partnerCounts.reduce((sum, c, i) => sum + c * TIERS[i].instructors, 0) + ct.reduce((sum, t) => sum + (t.count || 0) * (t.instructors || 0), 0);
+    const licenseRevenue = s.partnerCounts.reduce((sum, c, i) => sum + c * s.tierFees[i], 0) + ct.reduce((sum, t) => sum + (t.count || 0) * (t.fee || 0), 0);
     const effectivePartners = totalPartners * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
     const newLicensedOrgs = s.newIPPInstructors * (s.pctIPPtoLicense / 100);
     const activeCohortOrgs = effectivePartners * (s.pctLicenseToActive / 100);
@@ -899,6 +901,42 @@ function PartnersGrowthTab({ state, calc, set, setPartnerCount, setTierFee, edit
             </div>
           </div>
         ))}
+        {/* Custom Tiers */}
+        {(state.customTiers || []).map((ct, i) => (
+          <div key={'ct'+i} style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12, padding:'8px 12px', background:'#faf5ff', borderRadius:8, border:'1px solid '+PURPLE+'22' }}>
+            <input type="text" value={ct.label} placeholder="Name (e.g. Groundworks)"
+              onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], label: e.target.value }; set('customTiers', next); }}
+              style={{ width:120, padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
+            <div style={{ fontSize:11, color:GRAY500 }}>
+              <div>Instr:</div>
+              <input type="number" value={ct.instructors} min={1} max={20}
+                onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], instructors: Number(e.target.value) }; set('customTiers', next); }}
+                style={{ width:50, padding:'2px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />
+            </div>
+            <div style={{ fontSize:11, color:GRAY500 }}>
+              <div>Fee:</div>
+              <input type="number" value={ct.fee}
+                onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], fee: Number(e.target.value) }; set('customTiers', next); }}
+                style={{ width:80, padding:'2px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />
+            </div>
+            <input type="range" min={0} max={15} value={ct.count || 0}
+              onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], count: Number(e.target.value) }; set('customTiers', next); }}
+              style={{ flex:1 }} />
+            <div style={{ width:40, fontSize:22, fontWeight:700, textAlign:'center', color:PURPLE }}>{ct.count || 0}</div>
+            <div style={{ width:100, fontSize:12, color:GRAY500, textAlign:'right' }}>
+              {fmt((ct.count||0)*ct.fee)}<br/>{(ct.count||0)*ct.instructors} instr.
+            </div>
+            <button onClick={() => { const next = [...state.customTiers]; next.splice(i, 1); set('customTiers', next); }}
+              style={{ padding:'4px 8px', fontSize:14, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer', lineHeight:1 }}>
+              {'\u00D7'}
+            </button>
+          </div>
+        ))}
+        <button onClick={() => set('customTiers', [...(state.customTiers || []), { label: '', instructors: 1, fee: 0, count: 0 }])}
+          style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+PURPLE+'44',
+            background:'#faf5ff', color:PURPLE, cursor:'pointer', fontFamily:"'Inter',sans-serif", marginBottom:12 }}>
+          + Add Custom Rate
+        </button>
         {/* Summary */}
         <div style={{ display:'flex', gap:24, flexWrap:'wrap', padding:'12px 0 0', borderTop:'1px solid '+GRAY200 }}>
           <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Partners</div><div style={{ fontSize:22, fontWeight:700, color:BLUE }}>{calc.totalPartners}</div></div>
