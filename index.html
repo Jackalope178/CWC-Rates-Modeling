@@ -104,6 +104,8 @@ const defaults = {
   modelA_pilotDuration: 1,
   modelA_pilotConvertPct: 70,
   // --- MODEL B: Cohort Packages ---
+  modelB_baseLicense: 500,        // annual base license fee (all partners pay this)
+  modelB_addOnCohortFee: 400,     // per-cohort fee for cohorts beyond package
   modelB_starterName: 'Starter', modelB_starterCohorts: 1, modelB_starterFee: 1500,
   modelB_standardName: 'Standard', modelB_standardCohorts: 3, modelB_standardFee: 2800,
   modelB_growthName: 'Growth', modelB_growthCohorts: 6, modelB_growthFee: 4500,
@@ -310,17 +312,23 @@ function App() {
     }
     const maNetMargin = maTotalRev - totalCost;
 
-    // Model B revenue
+    // Model B revenue: base license + package fee + add-on cohorts
     const mbPartners = totalPartners;
     const mbStarter = Math.round(mbPartners * (s.modelB_pctStarter/100));
     const mbStandard = Math.round(mbPartners * (s.modelB_pctStandard/100));
     const mbGrowth = mbPartners - mbStarter - mbStandard;
-    const mbRev = mbStarter*s.modelB_starterFee + mbStandard*s.modelB_standardFee + mbGrowth*s.modelB_growthFee;
+    const mbBaseRev = mbPartners * s.modelB_baseLicense;
+    const mbPkgRev = mbStarter*s.modelB_starterFee + mbStandard*s.modelB_standardFee + mbGrowth*s.modelB_growthFee;
+    // Add-on: cohorts beyond what packages include
+    const mbIncludedCohorts = mbStarter*s.modelB_starterCohorts + mbStandard*s.modelB_standardCohorts + mbGrowth*s.modelB_growthCohorts;
+    const mbAddOnCohorts = Math.max(0, totalCohorts - mbIncludedCohorts);
+    const mbAddOnRev = mbAddOnCohorts * s.modelB_addOnCohortFee;
+    const mbRev = mbBaseRev + mbPkgRev + mbAddOnRev;
     let mbTotalRev = mbRev + ippRevenue + grantRevenue;
     let mbPilotDrag = 0;
     if (s.modelB_pilotEnabled) {
       const pp = Math.min(s.modelB_pilotPartners, totalPartners);
-      const avgPkg = mbTotalRev > 0 ? mbRev / Math.max(mbPartners,1) : s.modelB_starterFee;
+      const avgPkg = mbPartners > 0 ? (mbBaseRev + mbPkgRev) / mbPartners : s.modelB_starterFee;
       mbPilotDrag = pp * (avgPkg - s.modelB_pilotFee);
       mbTotalRev -= mbPilotDrag;
     }
@@ -331,7 +339,7 @@ function App() {
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
       ippCostTotal, cohortCostTotal, certCostTotal, totalCost, netMargin, marginPct,
       maSmall, maLarge, maAnnualRev, maCohortRev, maTotalRev, maNetMargin, maPilotDrag,
-      mbStarter, mbStandard, mbGrowth, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag };
+      mbStarter, mbStandard, mbGrowth, mbBaseRev, mbPkgRev, mbAddOnCohorts, mbAddOnRev, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag };
   }, [state]);
 
   // ═══ 5-YEAR FORECAST ═══
@@ -383,15 +391,19 @@ function App() {
         maRev -= pp*(s.modelA_annualFee*feeEsc-s.modelA_pilotFee) + pp*s.cohortsPerOrg*(s.modelA_largeCohortFee*feeEsc-s.modelA_pilotCohortFee);
       }
 
-      // Model B revenue
+      // Model B revenue: base license + packages + add-on cohorts
       const mbSt=Math.round(partners*(s.modelB_pctStarter/100));
       const mbSd=Math.round(partners*(s.modelB_pctStandard/100));
       const mbGr=partners-mbSt-mbSd;
-      let mbRev = (mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)*feeEsc + ippRev + grantRev;
+      const mbBase=partners*s.modelB_baseLicense*feeEsc;
+      const mbPkg=(mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)*feeEsc;
+      const mbInclCoh=mbSt*s.modelB_starterCohorts+mbSd*s.modelB_standardCohorts+mbGr*s.modelB_growthCohorts;
+      const mbAddOn=Math.max(0,cohorts-mbInclCoh)*s.modelB_addOnCohortFee*feeEsc;
+      let mbRev = mbBase+mbPkg+mbAddOn+ippRev+grantRev;
       if (s.modelB_pilotEnabled && yr < s.modelB_pilotDuration) {
         const pp=Math.min(s.modelB_pilotPartners,partners);
-        const avgPkg=(mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)/Math.max(partners,1);
-        mbRev -= pp*(avgPkg*feeEsc-s.modelB_pilotFee);
+        const avgPerPartner=(mbBase+mbPkg)/Math.max(partners,1);
+        mbRev -= pp*(avgPerPartner-s.modelB_pilotFee);
       }
 
       // Costs (same for all models)
@@ -604,9 +616,11 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
       // Model A
       const maSmall=Math.round(coh*(s.modelA_pctSmall/100)), maLarge=Math.round(coh*(1-s.modelA_pctSmall/100));
       const maRev = p*s.modelA_annualFee + maSmall*s.modelA_smallCohortFee + maLarge*s.modelA_largeCohortFee;
-      // Model B
+      // Model B: base + packages + add-on
       const mbSt=Math.round(p*(s.modelB_pctStarter/100)), mbSd=Math.round(p*(s.modelB_pctStandard/100)), mbGr=p-mbSt-mbSd;
-      const mbRev = mbSt*s.modelB_starterFee + mbSd*s.modelB_standardFee + mbGr*s.modelB_growthFee;
+      const mbInclCoh=mbSt*s.modelB_starterCohorts+mbSd*s.modelB_standardCohorts+mbGr*s.modelB_growthCohorts;
+      const mbAddOn=Math.max(0,coh-mbInclCoh)*s.modelB_addOnCohortFee;
+      const mbRev = p*s.modelB_baseLicense + mbSt*s.modelB_starterFee + mbSd*s.modelB_standardFee + mbGr*s.modelB_growthFee + mbAddOn;
       arr.push({ partners:p, Current:Math.round(currRev), 'Model A':Math.round(maRev), 'Model B':Math.round(mbRev) });
     }
     return arr;
@@ -720,25 +734,34 @@ function ModelBPanel({ state, calc, set }) {
         <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Bundled packages orgs can plan and budget around. Predictable for everyone.</div>
       </div>
       <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
-        <div style={{ fontSize:13, fontWeight:600, color:GRAY900, marginBottom:12 }}>Define your packages:</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px', marginBottom:8 }}>
+          <InputField label="Base license fee (all partners)" value={s.modelB_baseLicense} min={0} max={5000} step={50} onChange={v=>set('modelB_baseLicense',v)} prefix="$" note="Annual fee every partner pays regardless of package" />
+          <InputField label="Add-on cohort fee (beyond package)" value={s.modelB_addOnCohortFee} min={0} max={3000} step={25} onChange={v=>set('modelB_addOnCohortFee',v)} prefix="$" note="Per extra cohort beyond what's included" />
+        </div>
+
+        <SectionDivider label="Cohort Packages" />
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:10 }}>Each package includes a set number of cohorts. Orgs pay base license + package fee. Extra cohorts cost {fmt(s.modelB_addOnCohortFee)} each.</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, marginBottom:12 }}>
           <Card style={{ background:'#faf5ff', padding:'12px' }}>
             <input type="text" value={s.modelB_starterName} onChange={e=>set('modelB_starterName',e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
             <InputField label="Cohorts included" value={s.modelB_starterCohorts} min={1} max={10} onChange={v=>set('modelB_starterCohorts',v)} />
-            <InputField label="Annual fee" value={s.modelB_starterFee} min={0} max={10000} step={100} onChange={v=>set('modelB_starterFee',v)} prefix="$" />
-            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt(s.modelB_starterFee/Math.max(s.modelB_starterCohorts,1))}</div>
+            <InputField label="Package fee" value={s.modelB_starterFee} min={0} max={10000} step={100} onChange={v=>set('modelB_starterFee',v)} prefix="$" />
+            <div style={{ fontSize:11, color:GRAY500 }}>Total to org: {fmt(s.modelB_baseLicense + s.modelB_starterFee)}/yr</div>
+            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt((s.modelB_baseLicense + s.modelB_starterFee)/Math.max(s.modelB_starterCohorts,1))}</div>
           </Card>
           <Card style={{ background:'#faf5ff', padding:'12px' }}>
             <input type="text" value={s.modelB_standardName} onChange={e=>set('modelB_standardName',e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
             <InputField label="Cohorts included" value={s.modelB_standardCohorts} min={1} max={10} onChange={v=>set('modelB_standardCohorts',v)} />
-            <InputField label="Annual fee" value={s.modelB_standardFee} min={0} max={15000} step={100} onChange={v=>set('modelB_standardFee',v)} prefix="$" />
-            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt(s.modelB_standardFee/Math.max(s.modelB_standardCohorts,1))}</div>
+            <InputField label="Package fee" value={s.modelB_standardFee} min={0} max={15000} step={100} onChange={v=>set('modelB_standardFee',v)} prefix="$" />
+            <div style={{ fontSize:11, color:GRAY500 }}>Total to org: {fmt(s.modelB_baseLicense + s.modelB_standardFee)}/yr</div>
+            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt((s.modelB_baseLicense + s.modelB_standardFee)/Math.max(s.modelB_standardCohorts,1))}</div>
           </Card>
           <Card style={{ background:'#faf5ff', padding:'12px' }}>
             <input type="text" value={s.modelB_growthName} onChange={e=>set('modelB_growthName',e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
             <InputField label="Cohorts included" value={s.modelB_growthCohorts} min={1} max={10} onChange={v=>set('modelB_growthCohorts',v)} />
-            <InputField label="Annual fee" value={s.modelB_growthFee} min={0} max={20000} step={100} onChange={v=>set('modelB_growthFee',v)} prefix="$" />
-            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt(s.modelB_growthFee/Math.max(s.modelB_growthCohorts,1))}</div>
+            <InputField label="Package fee" value={s.modelB_growthFee} min={0} max={20000} step={100} onChange={v=>set('modelB_growthFee',v)} prefix="$" />
+            <div style={{ fontSize:11, color:GRAY500 }}>Total to org: {fmt(s.modelB_baseLicense + s.modelB_growthFee)}/yr</div>
+            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt((s.modelB_baseLicense + s.modelB_growthFee)/Math.max(s.modelB_growthCohorts,1))}</div>
           </Card>
         </div>
 
@@ -777,14 +800,16 @@ function ModelBPanel({ state, calc, set }) {
             <div style={{ fontSize:13, fontWeight:700, color:c.netMargin>=0?GREEN:RED }}>Margin: {fmt(c.netMargin)}</div>
           </Card>
           <Card style={{ background:'#faf5ff' }}>
-            <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:8 }}>Model B: Packages</div>
+            <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:8 }}>Model B: Base + Packages</div>
+            <div style={{ fontSize:12 }}>Base license: <strong>{fmt(c.mbBaseRev)}</strong> <span style={{ color:GRAY500 }}>({c.totalPartners} x {fmt(s.modelB_baseLicense)})</span></div>
             <div style={{ fontSize:12 }}>{s.modelB_starterName}: <strong>{fmt(c.mbStarter*s.modelB_starterFee)}</strong> <span style={{ color:GRAY500 }}>({c.mbStarter} orgs)</span></div>
             <div style={{ fontSize:12 }}>{s.modelB_standardName}: <strong>{fmt(c.mbStandard*s.modelB_standardFee)}</strong> <span style={{ color:GRAY500 }}>({c.mbStandard} orgs)</span></div>
             <div style={{ fontSize:12 }}>{s.modelB_growthName}: <strong>{fmt(c.mbGrowth*s.modelB_growthFee)}</strong> <span style={{ color:GRAY500 }}>({c.mbGrowth} orgs)</span></div>
+            {c.mbAddOnCohorts > 0 && <div style={{ fontSize:12 }}>Add-on cohorts: <strong>{fmt(c.mbAddOnRev)}</strong> <span style={{ color:GRAY500 }}>({Math.round(c.mbAddOnCohorts)} extra x {fmt(s.modelB_addOnCohortFee)})</span></div>}
             <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
             {s.modelB_pilotEnabled && <div style={{ fontSize:12, color:RED }}>Pilot drag: <strong>{fmt(-c.mbPilotDrag)}</strong></div>}
             <div style={{ borderTop:'1px solid '+PURPLE+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:PURPLE }}>Revenue: {fmt(c.mbTotalRev)}</div>
-            <div style={{ fontSize:13, fontWeight:700, color:c.mbNetMargin>=0?GREEN:RED }}>Margin: {fmt(c.mbNetMargin)}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:c.mbNetMargin>=0?GREEN:RED }}>Profit: {fmt(c.mbNetMargin)}</div>
           </Card>
         </div>
         <div style={{ background:c.mbTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.mbTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
@@ -996,11 +1021,13 @@ function BreakEvenTab({ state, calc }) {
           const maLarge = Math.round(cohorts*(1-s.modelA_pctSmall/100));
           cumA += p*s.modelA_annualFee*feeEsc + maSmall*s.modelA_smallCohortFee*feeEsc + maLarge*s.modelA_largeCohortFee*feeEsc + ippRev + grantRev;
 
-          // Model B
+          // Model B: base + packages + add-on cohorts
           const mbSt=Math.round(p*(s.modelB_pctStarter/100));
           const mbSd=Math.round(p*(s.modelB_pctStandard/100));
           const mbGr=p-mbSt-mbSd;
-          cumB += (mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)*feeEsc + ippRev + grantRev;
+          const mbInclCoh=mbSt*s.modelB_starterCohorts+mbSd*s.modelB_standardCohorts+mbGr*s.modelB_growthCohorts;
+          const mbAddOn=Math.max(0,coh-mbInclCoh)*s.modelB_addOnCohortFee*feeEsc;
+          cumB += (p*s.modelB_baseLicense+mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)*feeEsc + mbAddOn + ippRev + grantRev;
 
           // Cost
           const accred = s.costAccreditation*costInf+(isReaccred?s.reaccredCost:0);
