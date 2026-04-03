@@ -45,7 +45,7 @@ const TIERS = [
 const defaults = {
   partnerCounts: [5, 0, 0, 0, 0, 0, 0],
   tierFees: [4050, 6800, 9000, 11310, 13120, 14940, 22750],
-  costStaff: 20000, costLMS: 600, costAccreditation: 3000, costSystems: 500, costOverhead: 2500,
+  costStaff: 20000, costLMS: 600, costAccreditation: 3000, costSystems: 500,
   costPerIPP: 400, costPerCohort: 300, costPerCert: 10,
   costSalesOutreach: 2000, costOnboarding: 500, costQACompliance: 1500, costSysMaintenance: 1000,
   feeIPP: 2000, feeCohort: 350, feeCertOverage: 50, feeGrant: 0,
@@ -159,7 +159,7 @@ function App() {
 
   const calc = useMemo(() => {
     const s = state;
-    const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems + s.costOverhead;
+    const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
     const newPartners = Math.round(s.newIPPInstructors * (s.pctIPPtoLicense / 100));
     const hiddenTotal = s.costSalesOutreach + (s.costOnboarding * newPartners) + s.costQACompliance + s.costSysMaintenance;
     const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0);
@@ -218,7 +218,7 @@ function App() {
     const s = state;
     const data = [];
     for (let p = 1; p <= 20; p++) {
-      const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems + s.costOverhead;
+      const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
       const newPartners = Math.round(s.newIPPInstructors * (s.pctIPPtoLicense / 100));
       const hiddenTotal = s.costSalesOutreach + (s.costOnboarding * newPartners) + s.costQACompliance + s.costSysMaintenance;
       const licRev = p * s.tierFees[0];
@@ -326,7 +326,7 @@ function App() {
       const calendarYear = s.forecastStartYear + yr;
       const isReaccredYear = calendarYear === s.reaccredYear;
       const accredCost = s.costAccreditation * costInf + (isReaccredYear ? s.reaccredCost : 0);
-      const fixedTotal = s.costStaff * staffInf + s.costLMS * costInf + accredCost + s.costSystems * costInf + s.costOverhead * costInf;
+      const fixedTotal = s.costStaff * staffInf + s.costLMS * costInf + accredCost + s.costSystems*costInf * costInf;
       const newPartnersFromPipeline = Math.round(newIPP * (s.pctIPPtoLicense / 100));
       const hiddenTotal = (s.costSalesOutreach + s.costQACompliance + s.costSysMaintenance) * costInf
         + s.costOnboarding * newPartnersFromPipeline * varCostInf;
@@ -799,7 +799,6 @@ function CostsTab({ state, calc, set }) {
         <SliderField label="LMS (Thinkific)" value={state.costLMS} min={0} max={5000} step={50} onChange={v=>set('costLMS',v)} prefix="$" />
         <SliderField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={15000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
         <SliderField label="Airtable + Systems" value={state.costSystems} min={0} max={5000} step={50} onChange={v=>set('costSystems',v)} prefix="$" />
-        <SliderField label="Overhead / Indirect" value={state.costOverhead} min={0} max={10000} step={100} onChange={v=>set('costOverhead',v)} prefix="$" />
         <div style={{ fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:8 }}>Fixed Total: {fmt(calc.fixedTotal)}</div>
       </Card>
       <Card style={{ marginBottom:16 }}>
@@ -867,7 +866,6 @@ function VariableMapTab({ state, calc, showFormulas, setShowFormulas }) {
     ['LMS','INPUT',fmt(state.costLMS),'Costs tab','Total Cost'],
     ['Accreditation/ANSI','INPUT',fmt(state.costAccreditation),'Costs tab','Total Cost'],
     ['Airtable + Systems','INPUT',fmt(state.costSystems),'Costs tab','Total Cost'],
-    ['Overhead/Indirect','INPUT',fmt(state.costOverhead),'Costs tab','Total Cost'],
     ['Sales & outreach','INPUT',fmt(state.costSalesOutreach),'Costs tab','Total Cost'],
     ['Partner onboarding','INPUT',fmt(state.costOnboarding),'Costs tab','Total Cost'],
     ['QA + compliance','INPUT',fmt(state.costQACompliance),'Costs tab','Total Cost'],
@@ -1011,7 +1009,7 @@ function ForecastTab({ state, calc, forecast, set }) {
       const staffInf = Math.pow(1 + s.staffRaiseRate / 100, yr);
       const calYr = s.forecastStartYear + yr;
       const accredC = s.costAccreditation*costInf + (calYr===s.reaccredYear?s.reaccredCost:0);
-      const fixedT = s.costStaff*staffInf + s.costLMS*costInf + accredC + s.costSystems*costInf + s.costOverhead*costInf;
+      const fixedT = s.costStaff*staffInf + s.costLMS*costInf + accredC + s.costSystems*costInf*costInf;
       const newP = Math.round(newIPP*(s.pctIPPtoLicense/100));
       const hiddenT = (s.costSalesOutreach+s.costQACompliance+s.costSysMaintenance)*costInf + s.costOnboarding*newP*varCostInf;
       const totalCost = fixedT + hiddenT + newIPP*s.costPerIPP*varCostInf + coh*s.costPerCohort*varCostInf + parts*s.costPerCert*varCostInf;
