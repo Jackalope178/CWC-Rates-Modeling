@@ -36,30 +36,42 @@ const GRAY50='#f9fafb',GRAY100='#f3f4f6',GRAY200='#e5e7eb',GRAY400='#9ca3af',GRA
 // ═══ SUPABASE ═══
 const SUPABASE_URL = 'https://uihhlmyydgfyrlbdpmuw.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpaGhsbXl5ZGdmeXJsYmRwbXV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjE2NzUsImV4cCI6MjA5MDc5NzY3NX0.C9qjCYmT_q217Z2sgAsWysnNQcHYGFZRWYXBV4Iglfs';
-const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+// Try multiple ways the Supabase UMD might expose createClient
+const _sb = window.supabase || window.Supabase;
+const supabase = _sb
+  ? (_sb.createClient ? _sb.createClient(SUPABASE_URL, SUPABASE_KEY)
+    : _sb.default?.createClient ? _sb.default.createClient(SUPABASE_URL, SUPABASE_KEY)
+    : null)
+  : null;
+console.log('Supabase client initialized:', !!supabase, 'window.supabase:', typeof window.supabase, 'window.Supabase:', typeof window.Supabase);
 
 async function loadSaves() {
-  if (!supabase) return [];
+  if (!supabase) { console.warn('loadSaves: no supabase client'); return []; }
   const { data, error } = await supabase.from('saved_states').select('id, name, updated_at').order('updated_at', { ascending: false });
+  if (error) console.error('loadSaves error:', error);
   return error ? [] : data;
 }
 async function loadState(id) {
-  if (!supabase) return null;
+  if (!supabase) { console.warn('loadState: no supabase client'); return null; }
   const { data, error } = await supabase.from('saved_states').select('state').eq('id', id).single();
+  if (error) console.error('loadState error:', error);
   return error ? null : data.state;
 }
 async function saveState(name, state, existingId) {
-  if (!supabase) return null;
+  if (!supabase) { console.warn('saveState: no supabase client'); return null; }
   if (existingId) {
     const { data, error } = await supabase.from('saved_states').update({ state, updated_at: new Date().toISOString() }).eq('id', existingId).select().single();
+    if (error) console.error('saveState update error:', error);
     return error ? null : data;
   }
   const { data, error } = await supabase.from('saved_states').insert({ name, state }).select().single();
+  if (error) console.error('saveState insert error:', error);
   return error ? null : data;
 }
 async function deleteSave(id) {
   if (!supabase) return false;
   const { error } = await supabase.from('saved_states').delete().eq('id', id);
+  if (error) console.error('deleteSave error:', error);
   return !error;
 }
 
