@@ -54,6 +54,15 @@ const defaults = {
   pilotFee: 2000, pilotFullFee: 4050, pilotDuration: 1, pilotPartners: 3, pilotConvertPct: 70,
   consortiumFee: 9000, consortiumPartners: 3, consortiumCohorts: 1, consortiumNewPct: 50,
   sponsoredFee: 0, sponsoredListPrice: 4050, sponsoredPartners: 2, sponsoredGrant: 0, sponsoredFunderName: 'Funder',
+  // --- FORECAST (5-year) ---
+  feeEscalation: 3,         // % annual license fee increase
+  ippFeeYr2: 2000, ippFeeYr3: 2000, ippFeeYr4: 2000, ippFeeYr5: 2000,
+  cohortFeeEscalation: 2,   // % annual cohort fee increase
+  costInflation: 3,         // % annual fixed+hidden cost inflation
+  variableCostInflation: 2, // % annual variable cost inflation
+  pipelineGrowth: 10,       // % annual growth in new IPP instructors
+  grantGrowthRate: 0,       // % annual grant revenue change
+  forecastScenario: 'none', // none | pilot | consortium | sponsored
 };
 
 const fmt = (n) => {
@@ -122,7 +131,7 @@ function Card({ children, style }) {
   return <div style={{ background:'white', border:'1.5px solid '+GRAY200, borderRadius:10, padding:'16px 20px', ...style }}>{children}</div>;
 }
 
-const TABS = ['Scenarios','Overview','Partners','Pipeline','Costs','Variable Map','Sensitivity'];
+const TABS = ['Scenarios','Overview','Partners','Pipeline','Costs','Variable Map','Sensitivity','Forecast'];
 
 // ═══ MAIN APP ═══
 function App() {
@@ -237,6 +246,120 @@ function App() {
     return data;
   }, [state, sensitivityOverlay, sensitivityLens]);
 
+  // ═══ 5-YEAR FORECAST ENGINE ═══
+  const forecast = useMemo(() => {
+    const s = state;
+    const years = [];
+    const startPartners = s.partnerCounts.reduce((a,b) => a+b, 0);
+    const ippFees = [s.feeIPP, s.ippFeeYr2, s.ippFeeYr3, s.ippFeeYr4, s.ippFeeYr5];
+    let cumRevenue = 0, cumCost = 0, cumMargin = 0;
+    let breakEvenYear = null;
+
+    for (let yr = 0; yr < 5; yr++) {
+      const feeEsc = Math.pow(1 + s.feeEscalation / 100, yr);
+      const cohortFeeEsc = Math.pow(1 + s.cohortFeeEscalation / 100, yr);
+      const costInf = Math.pow(1 + s.costInflation / 100, yr);
+      const varCostInf = Math.pow(1 + s.variableCostInflation / 100, yr);
+      const pipeGrow = Math.pow(1 + s.pipelineGrowth / 100, yr);
+      const grantGrow = Math.pow(1 + s.grantGrowthRate / 100, yr);
+
+      // Partner base roll-forward
+      let partners;
+      if (yr === 0) {
+        partners = startPartners;
+      } else {
+        const prev = years[yr - 1];
+        const retained = Math.round(prev.partners * (s.renewalRate / 100));
+        const newFromPipeline = Math.round(prev.newIPP * (s.pctIPPtoLicense / 100));
+        partners = retained + newFromPipeline;
+      }
+
+      const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
+      const currentIPPFee = ippFees[yr] || ippFees[ippFees.length - 1];
+
+      // Revenue
+      const licRev = s.partnerCounts.reduce((sum, c, i) => {
+        const tierShare = startPartners > 0 ? c / startPartners : (i === 0 ? 1 : 0);
+        return sum + Math.round(partners * tierShare) * s.tierFees[i] * feeEsc;
+      }, 0);
+      const ippRev = newIPP * currentIPPFee;
+      const effPartners = partners * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
+      const actOrgs = effPartners * (s.pctLicenseToActive / 100);
+      const cohorts = actOrgs * s.cohortsPerOrg;
+      const cohortFee = s.feeCohort * cohortFeeEsc;
+      const cohRev = cohorts * cohortFee;
+      const participants = cohorts * s.avgParticipants;
+      const certsIncl = partners * 15;
+      const overages = Math.max(0, participants - certsIncl);
+      const certRev = overages * s.feeCertOverage;
+      const grantRev = s.feeGrant * grantGrow;
+
+      let totalRev = licRev + ippRev + cohRev + certRev + grantRev;
+
+      // Scenario adjustments
+      if (s.forecastScenario === 'pilot' && yr < s.pilotDuration) {
+        const pilotCount = Math.min(s.pilotPartners, partners);
+        const discount = pilotCount * (s.tierFees[0] * feeEsc - s.pilotFee);
+        totalRev -= discount;
+      } else if (s.forecastScenario === 'pilot' && yr === s.pilotDuration) {
+        const converted = Math.round(s.pilotPartners * (s.pilotConvertPct / 100));
+        const lost = s.pilotPartners - converted;
+        totalRev -= lost * s.tierFees[0] * feeEsc;
+      }
+      if (s.forecastScenario === 'consortium') {
+        const consPartners = Math.min(s.consortiumPartners, partners);
+        const indivRev = consPartners * s.tierFees[0] * feeEsc;
+        const consRev = s.consortiumFee * feeEsc;
+        totalRev -= (indivRev - consRev);
+      }
+      if (s.forecastScenario === 'sponsored') {
+        const gap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
+        totalRev -= gap;
+      }
+
+      // Costs
+      const fixedTotal = (s.costStaff + s.costLMS + s.costAccreditation + s.costSystems + s.costOverhead) * costInf;
+      const newPartnersFromPipeline = Math.round(newIPP * (s.pctIPPtoLicense / 100));
+      const hiddenTotal = (s.costSalesOutreach + s.costQACompliance + s.costSysMaintenance) * costInf
+        + s.costOnboarding * newPartnersFromPipeline * varCostInf;
+      const ippCost = newIPP * s.costPerIPP * varCostInf;
+      const cohortCost = cohorts * s.costPerCohort * varCostInf;
+      const certCost = participants * s.costPerCert * varCostInf;
+      const totalCost = fixedTotal + hiddenTotal + ippCost + cohortCost + certCost;
+
+      const netMargin = totalRev - totalCost;
+      cumRevenue += totalRev;
+      cumCost += totalCost;
+      cumMargin += netMargin;
+
+      if (breakEvenYear === null && cumMargin > 0) breakEvenYear = yr + 1;
+
+      years.push({
+        year: yr + 1,
+        label: 'Year ' + (yr + 1),
+        partners,
+        newIPP,
+        licenseRevenue: licRev,
+        ippRevenue: ippRev,
+        cohortRevenue: cohRev,
+        certRevenue: certRev,
+        grantRevenue: grantRev,
+        totalRevenue: totalRev,
+        fixedCost: fixedTotal,
+        hiddenCost: hiddenTotal,
+        variableCost: ippCost + cohortCost + certCost,
+        totalCost,
+        netMargin,
+        marginPct: totalRev > 0 ? netMargin / totalRev : 0,
+        cumRevenue,
+        cumCost,
+        cumMargin,
+      });
+    }
+
+    return { years, breakEvenYear };
+  }, [state]);
+
   return (
     <div style={{ minHeight:'100vh', background:GRAY100, fontFamily:"'Inter',sans-serif" }}>
       <div style={{ background:'white', borderBottom:'1.5px solid '+GRAY200, padding:'16px 24px' }}>
@@ -269,6 +392,7 @@ function App() {
         {activeTab==='Costs' && <CostsTab state={state} calc={calc} set={set} />}
         {activeTab==='Variable Map' && <VariableMapTab state={state} calc={calc} showFormulas={showFormulas} setShowFormulas={setShowFormulas} />}
         {activeTab==='Sensitivity' && <SensitivityTab data={sensitivityData} overlay={sensitivityOverlay} setOverlay={setSensitivityOverlay} lens={sensitivityLens} setLens={setSensitivityLens} />}
+        {activeTab==='Forecast' && <ForecastTab state={state} calc={calc} forecast={forecast} set={set} />}
       </div>
 
       <div style={{ textAlign:'center', padding:'24px 0', fontSize:11, color:GRAY400 }}>
@@ -839,6 +963,278 @@ function SensitivityTab({ data, overlay, setOverlay, lens, setLens }) {
         </div>
       </Card>
       <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic' }}>Sensitivity uses 1-instructor tier as baseline unit. All Costs tab inputs apply.</div>
+    </div>
+  );
+}
+
+// ═══ FORECAST TAB ═══
+function ForecastTab({ state, calc, forecast, set }) {
+  const { years, breakEvenYear } = forecast;
+  const yr5 = years[4];
+
+  // Build baseline (no scenario) for comparison
+  const baselineForecast = useMemo(() => {
+    const s = { ...state, forecastScenario: 'none' };
+    const startPartners = s.partnerCounts.reduce((a,b) => a+b, 0);
+    const ippFees = [s.feeIPP, s.ippFeeYr2, s.ippFeeYr3, s.ippFeeYr4, s.ippFeeYr5];
+    const yrs = [];
+    for (let yr = 0; yr < 5; yr++) {
+      const feeEsc = Math.pow(1 + s.feeEscalation / 100, yr);
+      const cohortFeeEsc = Math.pow(1 + s.cohortFeeEscalation / 100, yr);
+      const costInf = Math.pow(1 + s.costInflation / 100, yr);
+      const varCostInf = Math.pow(1 + s.variableCostInflation / 100, yr);
+      const pipeGrow = Math.pow(1 + s.pipelineGrowth / 100, yr);
+      const grantGrow = Math.pow(1 + s.grantGrowthRate / 100, yr);
+      let partners;
+      if (yr === 0) { partners = startPartners; }
+      else { const prev = yrs[yr-1]; partners = Math.round(prev.partners*(s.renewalRate/100)) + Math.round(prev.newIPP*(s.pctIPPtoLicense/100)); }
+      const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
+      const licRev = s.partnerCounts.reduce((sum, c, i) => {
+        const share = startPartners > 0 ? c / startPartners : (i===0?1:0);
+        return sum + Math.round(partners * share) * s.tierFees[i] * feeEsc;
+      }, 0);
+      const effP = partners * (s.renewalRate/100) * (1 - s.dormantRate/100);
+      const coh = effP * (s.pctLicenseToActive/100) * s.cohortsPerOrg;
+      const parts = coh * s.avgParticipants;
+      const overages = Math.max(0, parts - partners*15);
+      const totalRev = licRev + newIPP*(ippFees[yr]||ippFees[4]) + coh*s.feeCohort*cohortFeeEsc + overages*s.feeCertOverage + s.feeGrant*grantGrow;
+      const fixedT = (s.costStaff+s.costLMS+s.costAccreditation+s.costSystems+s.costOverhead)*costInf;
+      const newP = Math.round(newIPP*(s.pctIPPtoLicense/100));
+      const hiddenT = (s.costSalesOutreach+s.costQACompliance+s.costSysMaintenance)*costInf + s.costOnboarding*newP*varCostInf;
+      const totalCost = fixedT + hiddenT + newIPP*s.costPerIPP*varCostInf + coh*s.costPerCohort*varCostInf + parts*s.costPerCert*varCostInf;
+      yrs.push({ year: yr+1, label: 'Year '+(yr+1), partners, newIPP, totalRevenue: totalRev, totalCost, netMargin: totalRev - totalCost });
+    }
+    return yrs;
+  }, [state]);
+
+  // Chart data for revenue stacked area
+  const revenueChartData = years.map(y => ({
+    name: y.label,
+    License: Math.round(y.licenseRevenue),
+    IPP: Math.round(y.ippRevenue),
+    Cohort: Math.round(y.cohortRevenue),
+    Certs: Math.round(y.certRevenue),
+    Grants: Math.round(y.grantRevenue),
+  }));
+
+  // Chart data for margin comparison
+  const marginChartData = years.map((y, i) => {
+    const entry = { name: y.label, Forecast: Math.round(y.netMargin) };
+    if (state.forecastScenario !== 'none') {
+      entry['Baseline'] = Math.round(baselineForecast[i].netMargin);
+    }
+    return entry;
+  });
+
+  // Chart data for cumulative
+  const cumChartData = years.map(y => ({
+    name: y.label,
+    'Cumulative Revenue': Math.round(y.cumRevenue),
+    'Cumulative Cost': Math.round(y.cumCost),
+    'Cumulative Margin': Math.round(y.cumMargin),
+  }));
+
+  const thS = { textAlign:'right', padding:'8px 10px', fontSize:12, fontWeight:700, color:GRAY700, borderBottom:'2px solid '+GRAY200 };
+  const tdS = { textAlign:'right', padding:'6px 10px', fontSize:12, borderBottom:'1px solid '+GRAY100 };
+
+  return (
+    <div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>
+        5-year projection based on current inputs with growth, escalation, and inflation assumptions.
+      </div>
+
+      {/* Forecast Inputs */}
+      <Card style={{ marginBottom:16 }}>
+        <SectionDivider label="Growth & Escalation Assumptions" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
+          <SliderField label="License fee escalation" value={state.feeEscalation} min={0} max={15} step={0.5} onChange={v=>set('feeEscalation',v)} unit="%/yr" note="Applied to all tier fees annually" />
+          <SliderField label="Cohort fee escalation" value={state.cohortFeeEscalation} min={0} max={15} step={0.5} onChange={v=>set('cohortFeeEscalation',v)} unit="%/yr" />
+          <SliderField label="Fixed cost inflation" value={state.costInflation} min={0} max={15} step={0.5} onChange={v=>set('costInflation',v)} unit="%/yr" note="Staff, LMS, accreditation, overhead" />
+          <SliderField label="Variable cost inflation" value={state.variableCostInflation} min={0} max={15} step={0.5} onChange={v=>set('variableCostInflation',v)} unit="%/yr" note="IPP delivery, cohort processing, certs" />
+          <SliderField label="Pipeline growth (new IPP/yr)" value={state.pipelineGrowth} min={-20} max={50} step={1} onChange={v=>set('pipelineGrowth',v)} unit="%/yr" note="Annual growth in new IPP instructors" />
+          <SliderField label="Grant revenue growth" value={state.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%/yr" />
+        </div>
+        <SectionDivider label="IPP Fee Schedule (by year)" />
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8 }}>
+          <div><div style={{ fontSize:11, color:GRAY500, marginBottom:4 }}>Year 1</div><div style={{ fontSize:14, fontWeight:700, color:TEAL }}>{fmt(state.feeIPP)}</div><div style={{ fontSize:10, color:GRAY400 }}>Set in Costs tab</div></div>
+          {[2,3,4,5].map(yr => (
+            <div key={yr}>
+              <div style={{ fontSize:11, color:GRAY500, marginBottom:4 }}>Year {yr}</div>
+              <input type="number" value={state['ippFeeYr'+yr]} onChange={e=>set('ippFeeYr'+yr, Number(e.target.value))}
+                style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right' }} />
+            </div>
+          ))}
+        </div>
+        <SectionDivider label="Scenario Overlay" />
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {[{k:'none',l:'No Scenario'},{k:'pilot',l:'Pilot'},{k:'consortium',l:'Consortium'},{k:'sponsored',l:'Sponsored'}].map(o => (
+            <button key={o.k} onClick={()=>set('forecastScenario',o.k)} style={{
+              padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
+              background:state.forecastScenario===o.k?PURPLE:'white', color:state.forecastScenario===o.k?'white':GRAY700,
+              cursor:'pointer', fontFamily:"'Inter',sans-serif"
+            }}>{o.l}</button>
+          ))}
+        </div>
+        {state.forecastScenario !== 'none' && (
+          <div style={{ fontSize:11, color:PURPLE, fontStyle:'italic', marginTop:6 }}>
+            Scenario "{state.forecastScenario}" adjustments applied to forecast. Baseline shown as comparison line.
+          </div>
+        )}
+      </Card>
+
+      {/* Summary KPIs */}
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+        <StatCard label="5-Year Total Revenue" value={fmt(yr5.cumRevenue)} color={BLUE} sub={fmt(yr5.totalRevenue)+' in Year 5'} />
+        <StatCard label="5-Year Total Cost" value={fmt(yr5.cumCost)} color={RED} sub={fmt(yr5.totalCost)+' in Year 5'} />
+        <StatCard label="5-Year Net Margin" value={fmt(yr5.cumMargin)} color={yr5.cumMargin>=0?GREEN:RED} highlight={true} sub={pct(yr5.cumRevenue>0?yr5.cumMargin/yr5.cumRevenue:0)+' overall margin'} />
+        <StatCard label="Year 5 Partners" value={yr5.partners} color={TEAL} sub={'from '+years[0].partners+' in Year 1'} />
+        <StatCard label="Cumulative Break-Even" value={breakEvenYear ? 'Year '+breakEvenYear : 'Not reached'} color={breakEvenYear?GREEN:RED} sub={breakEvenYear?'Cumulative margin turns positive':'5-year cumulative is negative'} />
+      </div>
+
+      {/* Revenue Stacked Bar */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue by Source (5-Year)</div>
+        <div style={{ width:'100%', height:300 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={revenueChartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="name" fontSize={11} />
+              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+              <Tooltip formatter={v=>fmt(v)} />
+              <Legend />
+              <Bar dataKey="License" stackId="a" fill={BLUE} />
+              <Bar dataKey="IPP" stackId="a" fill={TEAL} />
+              <Bar dataKey="Cohort" stackId="a" fill={PURPLE} />
+              <Bar dataKey="Certs" stackId="a" fill={GREEN} />
+              <Bar dataKey="Grants" stackId="a" fill="#4ade80" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* Net Margin Line */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>
+          Net Margin Trajectory
+          {state.forecastScenario !== 'none' && <span style={{ fontSize:12, fontWeight:400, color:GRAY500 }}> {'\u2014'} vs. baseline</span>}
+        </div>
+        <div style={{ width:'100%', height:280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={marginChartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="name" fontSize={11} />
+              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+              <Tooltip formatter={v=>fmt(v)} />
+              <Legend />
+              <ReferenceLine y={0} stroke={RED} strokeDasharray="4 4" />
+              <Line type="monotone" dataKey="Forecast" stroke={PURPLE} strokeWidth={2.5} dot={{ r:4 }} />
+              {state.forecastScenario !== 'none' && <Line type="monotone" dataKey="Baseline" stroke={BLUE} strokeWidth={2} strokeDasharray="6 3" dot={{ r:3 }} />}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* Cumulative P&L */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Cumulative P&L</div>
+        <div style={{ width:'100%', height:280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={cumChartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="name" fontSize={11} />
+              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+              <Tooltip formatter={v=>fmt(v)} />
+              <Legend />
+              <ReferenceLine y={0} stroke={GRAY900} strokeDasharray="2 2" />
+              <Line type="monotone" dataKey="Cumulative Revenue" stroke={BLUE} strokeWidth={2} dot={{ r:3 }} />
+              <Line type="monotone" dataKey="Cumulative Cost" stroke={RED} strokeWidth={2} dot={{ r:3 }} />
+              <Line type="monotone" dataKey="Cumulative Margin" stroke={GREEN} strokeWidth={2.5} dot={{ r:4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* Detailed Table */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Year-by-Year Detail</div>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
+            <thead>
+              <tr style={{ background:GRAY50 }}>
+                <th style={{ ...thS, textAlign:'left' }}>Metric</th>
+                {years.map(y => <th key={y.year} style={thS}>{y.label}</th>)}
+                <th style={{ ...thS, color:BLUE }}>5-Yr Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Partners</td>
+                {years.map(y => <td key={y.year} style={tdS}>{y.partners}</td>)}
+                <td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>New IPP Instructors</td>
+                {years.map(y => <td key={y.year} style={tdS}>{y.newIPP}</td>)}
+                <td style={tdS}>{years.reduce((s,y)=>s+y.newIPP,0)}</td></tr>
+              <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:600, color:BLUE }}>License Revenue</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.licenseRevenue)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.licenseRevenue,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>IPP Revenue</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.ippRevenue)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.ippRevenue,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Cohort Revenue</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.cohortRevenue)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.cohortRevenue,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Cert + Grant Revenue</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.certRevenue+y.grantRevenue)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.certRevenue+y.grantRevenue,0))}</td></tr>
+              <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:BLUE }}>Total Revenue</td>
+                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(y.totalRevenue)}</td>)}
+                <td style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(yr5.cumRevenue)}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Fixed Costs</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.fixedCost)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.fixedCost,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Hidden Costs</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.hiddenCost)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.hiddenCost,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Variable Costs</td>
+                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.variableCost)}</td>)}
+                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.variableCost,0))}</td></tr>
+              <tr style={{ background:'#fef2f2' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:RED }}>Total Cost</td>
+                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, color:RED }}>{fmt(y.totalCost)}</td>)}
+                <td style={{ ...tdS, fontWeight:700, color:RED }}>{fmt(yr5.cumCost)}</td></tr>
+              <tr style={{ background:yr5.cumMargin>=0?'#f0fdf4':'#fef2f2' }}>
+                <td style={{ ...tdS, textAlign:'left', fontWeight:700, fontSize:13, color:yr5.cumMargin>=0?GREEN:RED }}>Net Margin</td>
+                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, fontSize:13, color:y.netMargin>=0?GREEN:RED }}>{fmt(y.netMargin)}</td>)}
+                <td style={{ ...tdS, fontWeight:700, fontSize:13, color:yr5.cumMargin>=0?GREEN:RED }}>{fmt(yr5.cumMargin)}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Margin %</td>
+                {years.map(y => <td key={y.year} style={{ ...tdS, color:y.marginPct>=0?GREEN:RED }}>{pct(y.marginPct)}</td>)}
+                <td style={{ ...tdS, color:yr5.cumRevenue>0&&yr5.cumMargin/yr5.cumRevenue>=0?GREEN:RED }}>{pct(yr5.cumRevenue>0?yr5.cumMargin/yr5.cumRevenue:0)}</td></tr>
+              <tr style={{ borderTop:'2px solid '+GRAY200 }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:GRAY900 }}>Cumulative Margin</td>
+                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, color:y.cumMargin>=0?GREEN:RED }}>{fmt(y.cumMargin)}</td>)}
+                <td style={tdS}>{'\u2014'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Partner Growth Chart */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Partner Base Growth</div>
+        <div style={{ width:'100%', height:220 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={years.map(y=>({ name:y.label, Partners:y.partners, 'New IPP':y.newIPP }))} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="name" fontSize={11} />
+              <YAxis fontSize={11} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="Partners" fill={BLUE} radius={[4,4,0,0]} />
+              <Bar dataKey="New IPP" fill={TEAL} radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8 }}>
+          Partner base = (prior year {'\u00D7'} renewal rate) + new partners from pipeline. New IPP grows at {state.pipelineGrowth}%/yr.
+        </div>
+      </Card>
     </div>
   );
 }
