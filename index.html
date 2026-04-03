@@ -78,8 +78,8 @@ const defaults = {
   tierFees: [4050, 6800, 9000, 11310, 13120, 14940, 22750],
   costStaff: 20000, costLMS: 600, costAccreditation: 3000, costSystems: 500,
   costPerIPP: 400, costPerCohort: 300, costPerCert: 10,
-  costSalesOutreach: 2000, costOnboarding: 500, costQACompliance: 1500, costSysMaintenance: 1000,
-  feeIPP: 2000, feeCohort: 350, feeCertOverage: 50, feeGrant: 0,
+  feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
+  funders: [],  // array of { name: string, amount: number }
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
   pilotFee: 2000, pilotFullFee: 4050, pilotDuration: 1, pilotPartners: 3, pilotConvertPct: 70,
@@ -246,8 +246,6 @@ function App() {
   const calc = useMemo(() => {
     const s = state;
     const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
-    const newPartners = Math.round(s.newIPPInstructors * (s.pctIPPtoLicense / 100));
-    const hiddenTotal = s.costSalesOutreach + (s.costOnboarding * newPartners) + s.costQACompliance + s.costSysMaintenance;
     const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0);
     const totalInstructors = s.partnerCounts.reduce((sum, c, i) => sum + c * TIERS[i].instructors, 0);
     const licenseRevenue = s.partnerCounts.reduce((sum, c, i) => sum + c * s.tierFees[i], 0);
@@ -262,12 +260,12 @@ function App() {
     const ippRevenue = s.newIPPInstructors * s.feeIPP;
     const cohortRevenue = totalCohorts * s.feeCohort;
     const certOverageRev = certOverages * s.feeCertOverage;
-    const grantRevenue = s.feeGrant;
+    const grantRevenue = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
     const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
     const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
     const cohortCostTotal = totalCohorts * s.costPerCohort;
     const certCostTotal = certsIssued * s.costPerCert;
-    const totalCost = fixedTotal + hiddenTotal + ippCostTotal + cohortCostTotal + certCostTotal;
+    const totalCost = fixedTotal + ippCostTotal + cohortCostTotal + certCostTotal;
     const netMargin = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0 ? netMargin / totalRevenue : -1;
     const recurringRevenue = licenseRevenue + cohortRevenue;
@@ -277,7 +275,7 @@ function App() {
       - s.cohortsPerOrg * (s.pctLicenseToActive / 100) * s.feeCohort
       - s.cohortsPerOrg * (s.pctLicenseToActive / 100) * s.costPerCohort
       - TIERS[0].instructors * (s.newIPPInstructors / Math.max(totalPartners, 1)) * s.costPerIPP;
-    const breakEvenPartners = netPerPartner > 0 ? Math.ceil((fixedTotal + hiddenTotal) / netPerPartner) : null;
+    const breakEvenPartners = netPerPartner > 0 ? Math.ceil(fixedTotal / netPerPartner) : null;
     const pilotYr1Revenue = (totalPartners - s.pilotPartners) * s.tierFees[0] + s.pilotPartners * s.pilotFee + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
     const pilotYr1Margin = pilotYr1Revenue - totalCost;
     const pilotYr2Revenue = (totalPartners - s.pilotPartners) * s.tierFees[0] + s.pilotPartners * (s.pilotConvertPct / 100) * s.pilotFullFee + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
@@ -291,7 +289,7 @@ function App() {
     const sponsoredGap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
     const sponsoredCWPMargin = netMargin - sponsoredGap;
     const sponsoredFunderMargin = netMargin;
-    return { fixedTotal, hiddenTotal, newPartners, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
+    return { fixedTotal, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
       newLicensedOrgs, activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue, ippCostTotal, cohortCostTotal, certCostTotal,
       totalCost, netMargin, marginPct, recurringRevenue, stabilityScore, netPerPartner, breakEvenPartners,
@@ -305,23 +303,22 @@ function App() {
     const data = [];
     for (let p = 1; p <= 20; p++) {
       const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
-      const newPartners = Math.round(s.newIPPInstructors * (s.pctIPPtoLicense / 100));
-      const hiddenTotal = s.costSalesOutreach + (s.costOnboarding * newPartners) + s.costQACompliance + s.costSysMaintenance;
+      const grantTotal = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
       const licRev = p * s.tierFees[0];
       const effP = p * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
       const actOrgs = effP * (s.pctLicenseToActive / 100);
       const coh = actOrgs * s.cohortsPerOrg;
       const parts = coh * s.avgParticipants;
       const overages = Math.max(0, parts - p * 15);
-      const rev = licRev + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + s.feeGrant;
-      const cost = fixedTotal + hiddenTotal + s.newIPPInstructors * s.costPerIPP + coh * s.costPerCohort + parts * s.costPerCert;
+      const rev = licRev + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + grantTotal;
+      const cost = fixedTotal + s.newIPPInstructors * s.costPerIPP + coh * s.costPerCohort + parts * s.costPerCert;
       const baseline = rev - cost;
       let scenario = baseline;
       if (sensitivityOverlay === 'Pilot') {
-        const pilotRev = (p - s.pilotPartners) * s.tierFees[0] + Math.min(s.pilotPartners, p) * s.pilotFee + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + s.feeGrant;
+        const pilotRev = (p - s.pilotPartners) * s.tierFees[0] + Math.min(s.pilotPartners, p) * s.pilotFee + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + grantTotal;
         scenario = pilotRev - cost;
       } else if (sensitivityOverlay === 'Consortium') {
-        const consRev = s.consortiumFee + Math.max(0, p - s.consortiumPartners) * s.tierFees[0] + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + s.feeGrant;
+        const consRev = s.consortiumFee + Math.max(0, p - s.consortiumPartners) * s.tierFees[0] + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + grantTotal;
         scenario = consRev - cost;
       } else if (sensitivityOverlay === 'Sponsored') {
         scenario = baseline - (s.sponsoredListPrice - s.sponsoredFee) * Math.min(s.sponsoredPartners, p);
@@ -382,7 +379,8 @@ function App() {
       const certsIncl = partners * 15;
       const overages = Math.max(0, participants - certsIncl);
       const certRev = overages * s.feeCertOverage;
-      const grantRev = s.feeGrant * grantGrow;
+      const grantBase = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
+      const grantRev = grantBase * grantGrow;
 
       let totalRev = licRev + ippRev + cohRev + certRev + grantRev;
 
@@ -412,14 +410,11 @@ function App() {
       const calendarYear = s.forecastStartYear + yr;
       const isReaccredYear = calendarYear === s.reaccredYear;
       const accredCost = s.costAccreditation * costInf + (isReaccredYear ? s.reaccredCost : 0);
-      const fixedTotal = s.costStaff * staffInf + s.costLMS * costInf + accredCost + s.costSystems*costInf * costInf;
-      const newPartnersFromPipeline = Math.round(newIPP * (s.pctIPPtoLicense / 100));
-      const hiddenTotal = (s.costSalesOutreach + s.costQACompliance + s.costSysMaintenance) * costInf
-        + s.costOnboarding * newPartnersFromPipeline * varCostInf;
+      const fixedTotal = s.costStaff * staffInf + s.costLMS * costInf + accredCost + s.costSystems*costInf;
       const ippCost = newIPP * s.costPerIPP * varCostInf;
       const cohortCost = cohorts * s.costPerCohort * varCostInf;
       const certCost = participants * s.costPerCert * varCostInf;
-      const totalCost = fixedTotal + hiddenTotal + ippCost + cohortCost + certCost;
+      const totalCost = fixedTotal + ippCost + cohortCost + certCost;
 
       const netMargin = totalRev - totalCost;
       cumRevenue += totalRev;
@@ -441,7 +436,6 @@ function App() {
         grantRevenue: grantRev,
         totalRevenue: totalRev,
         fixedCost: fixedTotal,
-        hiddenCost: hiddenTotal,
         variableCost: ippCost + cohortCost + certCost,
         reaccredSpike: isReaccredYear ? s.reaccredCost : 0,
         totalCost,
@@ -524,7 +518,7 @@ function App() {
 
       <div style={{ display:'flex', gap:12, padding:'16px 24px', flexWrap:'wrap', position:'sticky', top:0, zIndex:10, background:GRAY100 }}>
         <StatCard label="Total Revenue" value={fmt(calc.totalRevenue)} sub={[calc.licenseRevenue,calc.ippRevenue,calc.cohortRevenue,calc.certOverageRev,calc.grantRevenue].filter(v=>v>0).length+' revenue sources'} color={BLUE} />
-        <StatCard label="Total Cost" value={fmt(calc.totalCost)} sub={'Fixed '+fmt(calc.fixedTotal)+' + Var '+fmt(calc.totalCost-calc.fixedTotal-calc.hiddenTotal)+' + Hidden '+fmt(calc.hiddenTotal)} color={RED} />
+        <StatCard label="Total Cost" value={fmt(calc.totalCost)} sub={'Fixed '+fmt(calc.fixedTotal)+' + Variable '+fmt(calc.totalCost-calc.fixedTotal)} color={RED} />
         <StatCard label="Net Margin" value={fmt(calc.netMargin)} sub={pct(calc.marginPct)+' margin'} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
         <StatCard label="Break-Even" value={calc.breakEvenPartners!=null?calc.breakEvenPartners+' partners':'N/A'} sub={calc.breakEvenPartners!=null?'1-instructor tier baseline':'N/A \u2014 check pricing'} color={calc.breakEvenPartners!=null?PURPLE:RED} />
         <StatCard label="Stability Score" value={pct(calc.stabilityScore)} sub="recurring / total revenue" color={TEAL} />
@@ -745,8 +739,7 @@ function OverviewTab({ state, calc, bothWorldsLens, setBothWorldsLens }) {
     { name:'Cert Overage', value:c.certOverageRev, color:GREEN },
     { name:'Grants', value:c.grantRevenue, color:'#4ade80' },
     { name:'Fixed Costs', value:-calc.fixedTotal, color:RED },
-    { name:'Semi-Variable', value:-(calc.ippCostTotal+calc.cohortCostTotal+calc.certCostTotal), color:ORANGE },
-    { name:'Hidden Costs', value:-calc.hiddenTotal, color:AMBER },
+    { name:'Variable', value:-(calc.ippCostTotal+calc.cohortCostTotal+calc.certCostTotal), color:ORANGE },
   ];
   const revSources = [
     { label:'License / Membership', value:c.licenseRevenue, color:BLUE },
@@ -914,12 +907,12 @@ function PipelineTab({ state, calc, set }) {
       <Card style={{ marginBottom:16 }}>
         <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Pipeline Inputs</div>
         <SliderField label="New IPP instructors this cycle" value={state.newIPPInstructors} min={0} max={30} onChange={v=>set('newIPPInstructors',v)} />
-        <SliderField label="% IPP \u2192 licensed org" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
-        <SliderField label="% licensed orgs \u2192 run \u22651 cohort/yr" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
+        <SliderField label="% IPP to licensed org" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
+        <SliderField label="% licensed orgs running 1+ cohort/yr" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
         <SliderField label="Cohorts per active org/yr" value={state.cohortsPerOrg} min={1} max={6} onChange={v=>set('cohortsPerOrg',v)} />
         <SliderField label="Avg participants per cohort" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
         {state.avgParticipants===15 && <div style={{ fontSize:12, fontWeight:600, color:AMBER, marginTop:-8, marginBottom:8 }}>{'\u26A0'} At cohort cap (15 participants max)</div>}
-        <SliderField label="Time IPP \u2192 first cohort (months)" value={6} min={1} max={18} onChange={()=>{}} note="Display only \u2014 affects planning notes, not P&L math" />
+        <SliderField label="Time IPP to first cohort (months)" value={6} min={1} max={18} onChange={()=>{}} note="Display only - affects planning notes, not P&L math" />
       </Card>
       <Card>
         <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline Revenue Output</div>
@@ -953,19 +946,39 @@ function CostsTab({ state, calc, set }) {
         <SliderField label="Cert issuance cost" value={state.costPerCert} min={0} max={50} step={1} onChange={v=>set('costPerCert',v)} prefix="$" note="per certificate" />
       </Card>
       <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Hidden / Often-Missed Costs (Annual)" />
-        <SliderField label="Sales & outreach time" value={state.costSalesOutreach} min={0} max={10000} step={100} onChange={v=>set('costSalesOutreach',v)} prefix="$" />
-        <SliderField label="Partner onboarding" value={state.costOnboarding} min={0} max={2000} step={50} onChange={v=>set('costOnboarding',v)} prefix="$" note="x new partner count (from Pipeline)" />
-        <SliderField label="QA + compliance" value={state.costQACompliance} min={0} max={5000} step={100} onChange={v=>set('costQACompliance',v)} prefix="$" />
-        <SliderField label="System maintenance" value={state.costSysMaintenance} min={0} max={5000} step={100} onChange={v=>set('costSysMaintenance',v)} prefix="$" />
-        <div style={{ fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:8 }}>Hidden Total: {fmt(calc.hiddenTotal)}</div>
-      </Card>
-      <Card style={{ marginBottom:16 }}>
         <SectionDivider label="Revenue Inputs" />
         <SliderField label="IPP fee" value={state.feeIPP} min={500} max={5000} step={100} onChange={v=>set('feeIPP',v)} prefix="$" />
         <SliderField label="Cohort fee" value={state.feeCohort} min={0} max={1000} step={25} onChange={v=>set('feeCohort',v)} prefix="$" />
         <SliderField label="Cert overage fee" value={state.feeCertOverage} min={0} max={200} step={5} onChange={v=>set('feeCertOverage',v)} prefix="$" />
-        <SliderField label="Grant / external revenue" value={state.feeGrant} min={0} max={100000} step={500} onChange={v=>set('feeGrant',v)} prefix="$" note="Annual grant or contract revenue" />
+      </Card>
+      <Card style={{ marginBottom:16 }}>
+        <SectionDivider label="Funders & Grants" />
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Add external funding sources — grants, contracts, sponsorships.</div>
+        {(state.funders || []).map((f, i) => (
+          <div key={i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+            <input type="text" value={f.name} placeholder="Funder name"
+              onChange={e => { const next = [...state.funders]; next[i] = { ...next[i], name: e.target.value }; set('funders', next); }}
+              style={{ flex:1, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" }} />
+            <input type="number" value={f.amount} placeholder="Amount"
+              onChange={e => { const next = [...state.funders]; next[i] = { ...next[i], amount: Number(e.target.value) }; set('funders', next); }}
+              style={{ width:120, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right', fontFamily:"'Inter',sans-serif" }} />
+            <span style={{ fontSize:13, fontWeight:700, color:GREEN, minWidth:80 }}>{fmt(f.amount || 0)}</span>
+            <button onClick={() => { const next = [...state.funders]; next.splice(i, 1); set('funders', next); }}
+              style={{ padding:'4px 8px', fontSize:14, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer', lineHeight:1 }}>
+              {'\u00D7'}
+            </button>
+          </div>
+        ))}
+        <button onClick={() => set('funders', [...(state.funders || []), { name: '', amount: 0 }])}
+          style={{ padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200,
+            background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' }}>
+          + Add Funder
+        </button>
+        {(state.funders || []).length > 0 && (
+          <div style={{ fontSize:13, fontWeight:700, color:GREEN, textAlign:'right', marginTop:10 }}>
+            Total Grant Revenue: {fmt((state.funders || []).reduce((s, f) => s + (f.amount || 0), 0))}
+          </div>
+        )}
       </Card>
       <Card>
         <SectionDivider label="Assumption Inputs" />
@@ -985,8 +998,8 @@ function VariableMapTab({ state, calc, showFormulas, setShowFormulas }) {
     ['New IPP instructors','INPUT',state.newIPPInstructors,'Pipeline tab','IPP Revenue, Funnel'],
     ['IPP Fee','INPUT',fmt(state.feeIPP),'Costs tab','IPP Revenue'],
     ['IPP delivery cost','INPUT',fmt(state.costPerIPP),'Costs tab','Total Cost'],
-    ['IPP \u2192 License rate','ASSUMPTION',state.pctIPPtoLicense+'%','Pipeline tab','Licensed org count'],
-    ['Grant revenue','INPUT',fmt(state.feeGrant),'Costs tab','Total Revenue, Stability'],
+    ['IPP to License rate','ASSUMPTION',state.pctIPPtoLicense+'%','Pipeline tab','Licensed org count'],
+    ['Grant revenue','INPUT',fmt(calc.grantRevenue),'Funders (' + (state.funders||[]).length + ')','Total Revenue, Stability'],
     ['New licensed orgs','OUTPUT',calc.newLicensedOrgs.toFixed(1),'IPP x conv rate','License Rev, Cohort vol'],
     ['IPP Revenue','OUTPUT',fmt(calc.ippRevenue),'Instructors x IPP fee','Total Revenue'],
     ['IPP Cost','OUTPUT',fmt(calc.ippCostTotal),'Instructors x IPP cost','Total Cost'],
@@ -996,7 +1009,7 @@ function VariableMapTab({ state, calc, showFormulas, setShowFormulas }) {
     ['License fee (Tier 1)','INPUT',fmt(state.tierFees[0]),'Partners tab','License Revenue'],
     ['Renewal rate','ASSUMPTION',state.renewalRate+'%','Costs tab','Retained partners'],
     ['Dormant partner rate','ASSUMPTION',state.dormantRate+'%','Costs tab','Effective cohort vol'],
-    ['% orgs \u2192 cohort','ASSUMPTION',state.pctLicenseToActive+'%','Pipeline tab','Cohort count, revenue'],
+    ['% orgs to cohort','ASSUMPTION',state.pctLicenseToActive+'%','Pipeline tab','Cohort count, revenue'],
     ['Cohorts per org/yr','INPUT',state.cohortsPerOrg,'Pipeline tab','Cohort rev + cost'],
     ['Cohort fee','INPUT',fmt(state.feeCohort),'Costs tab','Cohort Revenue'],
     ['Cohort processing cost','INPUT',fmt(state.costPerCohort),'Costs tab','Total Cost'],
@@ -1011,12 +1024,7 @@ function VariableMapTab({ state, calc, showFormulas, setShowFormulas }) {
     ['LMS','INPUT',fmt(state.costLMS),'Costs tab','Total Cost'],
     ['Accreditation/ANSI','INPUT',fmt(state.costAccreditation),'Costs tab','Total Cost'],
     ['Airtable + Systems','INPUT',fmt(state.costSystems),'Costs tab','Total Cost'],
-    ['Sales & outreach','INPUT',fmt(state.costSalesOutreach),'Costs tab','Total Cost'],
-    ['Partner onboarding','INPUT',fmt(state.costOnboarding),'Costs tab','Total Cost'],
-    ['QA + compliance','INPUT',fmt(state.costQACompliance),'Costs tab','Total Cost'],
-    ['System maintenance','INPUT',fmt(state.costSysMaintenance),'Costs tab','Total Cost'],
     ['Fixed Total','OUTPUT',fmt(calc.fixedTotal),'Sum above','Net Margin'],
-    ['Hidden Total','OUTPUT',fmt(calc.hiddenTotal),'Sum above','Net Margin'],
     ['Total Cost','OUTPUT',fmt(calc.totalCost),'All costs','Net Margin'],
   ];
 
@@ -1150,14 +1158,13 @@ function ForecastTab({ state, calc, forecast, set }) {
       const coh = effP * (s.pctLicenseToActive/100) * s.cohortsPerOrg;
       const parts = coh * s.avgParticipants;
       const overages = Math.max(0, parts - partners*15);
-      const totalRev = licRev + newIPP*(ippFees[yr]||ippFees[4]) + coh*s.feeCohort*cohortFeeEsc + overages*s.feeCertOverage + s.feeGrant*grantGrow;
+      const grantBase = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
+      const totalRev = licRev + newIPP*(ippFees[yr]||ippFees[4]) + coh*s.feeCohort*cohortFeeEsc + overages*s.feeCertOverage + grantBase*grantGrow;
       const staffInf = Math.pow(1 + s.staffRaiseRate / 100, yr);
       const calYr = s.forecastStartYear + yr;
       const accredC = s.costAccreditation*costInf + (calYr===s.reaccredYear?s.reaccredCost:0);
-      const fixedT = s.costStaff*staffInf + s.costLMS*costInf + accredC + s.costSystems*costInf*costInf;
-      const newP = Math.round(newIPP*(s.pctIPPtoLicense/100));
-      const hiddenT = (s.costSalesOutreach+s.costQACompliance+s.costSysMaintenance)*costInf + s.costOnboarding*newP*varCostInf;
-      const totalCost = fixedT + hiddenT + newIPP*s.costPerIPP*varCostInf + coh*s.costPerCohort*varCostInf + parts*s.costPerCert*varCostInf;
+      const fixedT = s.costStaff*staffInf + s.costLMS*costInf + accredC + s.costSystems*costInf;
+      const totalCost = fixedT + newIPP*s.costPerIPP*varCostInf + coh*s.costPerCohort*varCostInf + parts*s.costPerCert*varCostInf;
       yrs.push({ year: yr+1, label: 'Year '+(yr+1), partners, newIPP, totalRevenue: totalRev, totalCost, netMargin: totalRev - totalCost });
     }
     return yrs;
@@ -1374,9 +1381,6 @@ function ForecastTab({ state, calc, forecast, set }) {
               {years.some(y=>y.reaccredSpike>0) && <tr style={{ background:'#fffbeb' }}><td style={{ ...tdS, textAlign:'left', fontWeight:600, color:AMBER }}>{'\u26A0'} Reaccreditation (included above)</td>
                 {years.map(y => <td key={y.year} style={{ ...tdS, color:y.reaccredSpike>0?AMBER:GRAY400 }}>{y.reaccredSpike>0?fmt(y.reaccredSpike):'\u2014'}</td>)}
                 <td style={{ ...tdS, fontWeight:700, color:AMBER }}>{fmt(years.reduce((s,y)=>s+y.reaccredSpike,0))}</td></tr>}
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Hidden Costs</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.hiddenCost)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.hiddenCost,0))}</td></tr>
               <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Variable Costs</td>
                 {years.map(y => <td key={y.year} style={tdS}>{fmt(y.variableCost)}</td>)}
                 <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.variableCost,0))}</td></tr>
