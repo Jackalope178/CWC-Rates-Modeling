@@ -18,7 +18,7 @@ input[type="range"]{accent-color:#1d4ed8}
 <script>window.PropTypes = window.PropTypes || propTypes;</script>
 <script src="https://unpkg.com/recharts@2.15.0/umd/Recharts.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -36,14 +36,19 @@ const GRAY50='#f9fafb',GRAY100='#f3f4f6',GRAY200='#e5e7eb',GRAY400='#9ca3af',GRA
 // ═══ SUPABASE ═══
 const SUPABASE_URL = 'https://uihhlmyydgfyrlbdpmuw.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpaGhsbXl5ZGdmeXJsYmRwbXV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjE2NzUsImV4cCI6MjA5MDc5NzY3NX0.C9qjCYmT_q217Z2sgAsWysnNQcHYGFZRWYXBV4Iglfs';
-// Try multiple ways the Supabase UMD might expose createClient
-const _sb = window.supabase || window.Supabase;
-const supabase = _sb
-  ? (_sb.createClient ? _sb.createClient(SUPABASE_URL, SUPABASE_KEY)
-    : _sb.default?.createClient ? _sb.default.createClient(SUPABASE_URL, SUPABASE_KEY)
-    : null)
-  : null;
-console.log('Supabase client initialized:', !!supabase, 'window.supabase:', typeof window.supabase, 'window.Supabase:', typeof window.Supabase);
+// Find createClient from however the CDN exposes it
+let supabase = null;
+try {
+  const _sb = window.supabase || window.Supabase;
+  if (_sb && _sb.createClient) {
+    supabase = _sb.createClient(SUPABASE_URL, SUPABASE_KEY);
+  } else if (_sb && _sb.default && _sb.default.createClient) {
+    supabase = _sb.default.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+  // Log all supabase-like globals for debugging
+  const sbKeys = Object.keys(window).filter(k => k.toLowerCase().includes('supabase'));
+  console.log('Supabase client:', !!supabase, '| globals matching supabase:', sbKeys, '| window.supabase type:', typeof window.supabase);
+} catch(e) { console.error('Supabase init error:', e); }
 
 async function loadSaves() {
   if (!supabase) { console.warn('loadSaves: no supabase client'); return []; }
