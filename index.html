@@ -166,7 +166,7 @@ function Card({ children, style }) {
   return <div style={{ background:'white', border:'1.5px solid '+GRAY200, borderRadius:10, padding:'16px 20px', ...style }}>{children}</div>;
 }
 
-const TABS = ['Scenarios','Overview','Partners','Pipeline','Costs','Variable Map','Sensitivity','Forecast'];
+const TABS = ['Scenarios','Overview','Partners & Growth','Costs','Sensitivity','Forecast'];
 
 // ═══ MAIN APP ═══
 function App() {
@@ -175,7 +175,6 @@ function App() {
   const [scenarioMode, setScenarioMode] = useState('pilot');
   const [editTierFees, setEditTierFees] = useState(false);
   const [bothWorldsLens, setBothWorldsLens] = useState(false);
-  const [showFormulas, setShowFormulas] = useState(false);
   const [sensitivityOverlay, setSensitivityOverlay] = useState('None');
   const [sensitivityLens, setSensitivityLens] = useState(false);
   const [saves, setSaves] = useState([]);
@@ -536,10 +535,8 @@ function App() {
       <div style={{ padding:'20px 24px', maxWidth:1200, margin:'0 auto' }}>
         {activeTab==='Scenarios' && <ScenariosTab state={state} calc={calc} set={set} scenarioMode={scenarioMode} setScenarioMode={setScenarioMode} />}
         {activeTab==='Overview' && <OverviewTab state={state} calc={calc} bothWorldsLens={bothWorldsLens} setBothWorldsLens={setBothWorldsLens} />}
-        {activeTab==='Partners' && <PartnersTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
-        {activeTab==='Pipeline' && <PipelineTab state={state} calc={calc} set={set} />}
+        {activeTab==='Partners & Growth' && <PartnersGrowthTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
         {activeTab==='Costs' && <CostsTab state={state} calc={calc} set={set} />}
-        {activeTab==='Variable Map' && <VariableMapTab state={state} calc={calc} showFormulas={showFormulas} setShowFormulas={setShowFormulas} />}
         {activeTab==='Sensitivity' && <SensitivityTab data={sensitivityData} overlay={sensitivityOverlay} setOverlay={setSensitivityOverlay} lens={sensitivityLens} setLens={setSensitivityLens} />}
         {activeTab==='Forecast' && <ForecastTab state={state} calc={calc} forecast={forecast} set={set} />}
       </div>
@@ -816,15 +813,26 @@ function OverviewTab({ state, calc, bothWorldsLens, setBothWorldsLens }) {
   );
 }
 
-// ═══ PARTNERS TAB ═══
-function PartnersTab({ state, calc, set, setPartnerCount, setTierFee, editTierFees, setEditTierFees, resetFees }) {
+// ═══ PARTNERS & GROWTH TAB ═══
+function PartnersGrowthTab({ state, calc, set, setPartnerCount, setTierFee, editTierFees, setEditTierFees, resetFees }) {
   const renewCount = Math.round(calc.totalPartners * (state.renewalRate / 100));
   const churnCount = Math.round(calc.totalPartners * (1 - state.renewalRate / 100));
+
+  const stages = [
+    { label:'IPP Enrollments', value:state.newIPPInstructors },
+    { label:'Licensed Orgs', value:Math.round(state.newIPPInstructors*(state.pctIPPtoLicense/100)) },
+    { label:'Active Partners', value:Math.round(calc.effectivePartners) },
+    { label:'Running Cohorts', value:Math.round(calc.activeCohortOrgs) },
+    { label:'Certs Issued', value:Math.round(calc.certsIssued) },
+  ];
+  const funnelColors = [BLUE,'#2563eb','#6366f1','#8b5cf6',PURPLE];
+
   return (
     <div>
+      {/* ── Current Partner Base ── */}
       <Card style={{ marginBottom:16 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>License Tier Partners</div>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Current Partner Base</div>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={()=>setEditTierFees(!editTierFees)} style={{
               padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
@@ -833,7 +841,7 @@ function PartnersTab({ state, calc, set, setPartnerCount, setTierFee, editTierFe
             <button onClick={resetFees} style={{
               padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
               background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
-            }}>Reset All Fees</button>
+            }}>Reset Fees</button>
           </div>
         </div>
         {TIERS.map((tier, i) => (
@@ -851,78 +859,85 @@ function PartnersTab({ state, calc, set, setPartnerCount, setTierFee, editTierFe
             </div>
           </div>
         ))}
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ display:'flex', gap:24, flexWrap:'wrap' }}>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Total Partners</div><div style={{ fontSize:22, fontWeight:700, color:BLUE }}>{calc.totalPartners}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Total Instructors</div><div style={{ fontSize:22, fontWeight:700, color:TEAL }}>{calc.totalInstructors}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Total License Revenue</div><div style={{ fontSize:22, fontWeight:700, color:GREEN }}>{fmt(calc.licenseRevenue)}</div></div>
+        {/* Summary */}
+        <div style={{ display:'flex', gap:24, flexWrap:'wrap', padding:'12px 0 0', borderTop:'1px solid '+GRAY200 }}>
+          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Partners</div><div style={{ fontSize:22, fontWeight:700, color:BLUE }}>{calc.totalPartners}</div></div>
+          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Instructors</div><div style={{ fontSize:22, fontWeight:700, color:TEAL }}>{calc.totalInstructors}</div></div>
+          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>License Revenue</div><div style={{ fontSize:22, fontWeight:700, color:GREEN }}>{fmt(calc.licenseRevenue)}</div></div>
         </div>
       </Card>
-      <Card>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Renewal Impact</div>
-        <div style={{ fontSize:13, marginBottom:4 }}>Expected to renew next cycle: <strong style={{ color:GREEN }}>{renewCount} partners</strong></div>
-        <div style={{ fontSize:13, marginBottom:8 }}>At risk of churn: <strong style={{ color:RED }}>{churnCount} partners</strong></div>
-        <div style={{ background:GRAY200, borderRadius:6, height:16, overflow:'hidden', display:'flex' }}>
-          <div style={{ width:(calc.totalPartners>0?(renewCount/calc.totalPartners)*100:0)+'%', background:GREEN, height:'100%' }} />
-          <div style={{ width:(calc.totalPartners>0?(churnCount/calc.totalPartners)*100:0)+'%', background:RED, height:'100%' }} />
-        </div>
-      </Card>
-    </div>
-  );
-}
 
-// ═══ PIPELINE TAB ═══
-function PipelineTab({ state, calc, set }) {
-  const stages = [
-    { label:'IPP Enrollments', value:state.newIPPInstructors },
-    { label:'Licensed Orgs', value:Math.round(state.newIPPInstructors*(state.pctIPPtoLicense/100)) },
-    { label:'Active Partners (non-dormant)', value:Math.round(calc.effectivePartners) },
-    { label:'Cohort-Running Partners', value:Math.round(calc.activeCohortOrgs) },
-    { label:'Certificates Issued', value:Math.round(calc.certsIssued) },
-  ];
-  const colors = [BLUE,'#2563eb','#6366f1','#8b5cf6',PURPLE];
-  return (
-    <div>
-      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Model the conversion funnel from prospect to active cohort delivery.</div>
+      {/* ── Retention ── */}
       <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Conversion Funnel</div>
-        <div style={{ maxWidth:500, margin:'0 auto' }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Retention & Activity</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
+          <SliderField label="License renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
+          <SliderField label="Dormant partner rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" note="Licensed but not running cohorts" />
+        </div>
+        <div style={{ display:'flex', gap:16, alignItems:'center', marginTop:4 }}>
+          <div style={{ flex:1, background:GRAY200, borderRadius:6, height:16, overflow:'hidden', display:'flex' }}>
+            <div style={{ width:(calc.totalPartners>0?(renewCount/calc.totalPartners)*100:0)+'%', background:GREEN, height:'100%' }} />
+            <div style={{ width:(calc.totalPartners>0?(churnCount/calc.totalPartners)*100:0)+'%', background:RED, height:'100%' }} />
+          </div>
+          <div style={{ fontSize:12, color:GRAY500, minWidth:160 }}>
+            <span style={{ color:GREEN, fontWeight:600 }}>{renewCount} renew</span> / <span style={{ color:RED, fontWeight:600 }}>{churnCount} churn</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Growth & Pipeline ── */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Growth & Pipeline</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
+          <SliderField label="New IPP instructors this cycle" value={state.newIPPInstructors} min={0} max={30} onChange={v=>set('newIPPInstructors',v)} />
+          <SliderField label="% IPP to licensed org" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
+          <SliderField label="% licensed orgs running 1+ cohort/yr" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
+          <SliderField label="Cohorts per active org/yr" value={state.cohortsPerOrg} min={1} max={6} onChange={v=>set('cohortsPerOrg',v)} />
+        </div>
+        <SliderField label="Avg participants per cohort" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
+        {state.avgParticipants===15 && <div style={{ fontSize:12, fontWeight:600, color:AMBER, marginTop:-8, marginBottom:8 }}>At cohort cap (15 participants max)</div>}
+      </Card>
+
+      {/* ── Funnel + Revenue Output ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        <Card>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Conversion Funnel</div>
           {stages.map((stage, i) => {
-            const widthPct = 100 - i * 15;
+            const widthPct = 100 - i * 12;
             const dropoff = i>0 && stages[i-1].value>0 ? ((1-stage.value/stages[i-1].value)*100).toFixed(0) : null;
             return (
-              <div key={i} style={{ marginBottom:4 }}>
-                <div style={{ width:widthPct+'%', margin:'0 auto', background:colors[i], color:'white', padding:'10px 16px',
-                  borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:13, fontWeight:600 }}>
+              <div key={i} style={{ marginBottom:3 }}>
+                <div style={{ width:widthPct+'%', margin:'0 auto', background:funnelColors[i], color:'white', padding:'8px 12px',
+                  borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, fontWeight:600 }}>
                   <span>{stage.label}</span>
-                  <span style={{ fontSize:18, fontWeight:700 }}>{stage.value}</span>
+                  <span style={{ fontSize:16, fontWeight:700 }}>{stage.value}</span>
                 </div>
-                {dropoff!==null && <div style={{ textAlign:'center', fontSize:11, color:GRAY500, margin:'2px 0' }}>{'\u25BC'} {dropoff}% drop-off</div>}
+                {dropoff!==null && <div style={{ textAlign:'center', fontSize:10, color:GRAY500, margin:'1px 0' }}>{dropoff}% drop</div>}
               </div>
             );
           })}
-        </div>
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Pipeline Inputs</div>
-        <SliderField label="New IPP instructors this cycle" value={state.newIPPInstructors} min={0} max={30} onChange={v=>set('newIPPInstructors',v)} />
-        <SliderField label="% IPP to licensed org" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
-        <SliderField label="% licensed orgs running 1+ cohort/yr" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
-        <SliderField label="Cohorts per active org/yr" value={state.cohortsPerOrg} min={1} max={6} onChange={v=>set('cohortsPerOrg',v)} />
-        <SliderField label="Avg participants per cohort" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
-        {state.avgParticipants===15 && <div style={{ fontSize:12, fontWeight:600, color:AMBER, marginTop:-8, marginBottom:8 }}>{'\u26A0'} At cohort cap (15 participants max)</div>}
-        <SliderField label="Time IPP to first cohort (months)" value={6} min={1} max={18} onChange={()=>{}} note="Display only - affects planning notes, not P&L math" />
-      </Card>
-      <Card>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline Revenue Output</div>
-        <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>IPP Revenue</div><div style={{ fontSize:18, fontWeight:700, color:TEAL }}>{fmt(calc.ippRevenue)}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Cohort Revenue</div><div style={{ fontSize:18, fontWeight:700, color:PURPLE }}>{fmt(calc.cohortRevenue)}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Certs Issued</div><div style={{ fontSize:18, fontWeight:700, color:GRAY900 }}>{Math.round(calc.certsIssued)}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Cert Overage Rev</div><div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.certOverageRev)}</div></div>
-        </div>
-      </Card>
+        </Card>
+        <Card>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline Revenue</div>
+          <div style={{ display:'grid', gap:16 }}>
+            <div style={{ padding:'12px', background:GRAY50, borderRadius:8 }}>
+              <div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500, marginBottom:4 }}>IPP Revenue</div>
+              <div style={{ fontSize:22, fontWeight:700, color:TEAL }}>{fmt(calc.ippRevenue)}</div>
+              <div style={{ fontSize:11, color:GRAY500 }}>{state.newIPPInstructors} instructors x {fmt(state.feeIPP)}</div>
+            </div>
+            <div style={{ padding:'12px', background:GRAY50, borderRadius:8 }}>
+              <div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500, marginBottom:4 }}>Cohort Revenue</div>
+              <div style={{ fontSize:22, fontWeight:700, color:PURPLE }}>{fmt(calc.cohortRevenue)}</div>
+              <div style={{ fontSize:11, color:GRAY500 }}>{Math.round(calc.totalCohorts)} cohorts x {fmt(state.feeCohort)}</div>
+            </div>
+            <div style={{ padding:'12px', background:GRAY50, borderRadius:8 }}>
+              <div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500, marginBottom:4 }}>Certificates</div>
+              <div style={{ fontSize:22, fontWeight:700, color:GRAY900 }}>{Math.round(calc.certsIssued)} issued</div>
+              <div style={{ fontSize:11, color:GRAY500 }}>{Math.round(calc.certOverages)} overages = {fmt(calc.certOverageRev)} revenue</div>
+            </div>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -980,114 +995,11 @@ function CostsTab({ state, calc, set }) {
           </div>
         )}
       </Card>
-      <Card>
-        <SectionDivider label="Assumption Inputs" />
-        <SliderField label="License renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
-        <SliderField label="Dormant partner rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" note="Partners licensed but not running cohorts" />
-      </Card>
     </div>
   );
 }
 
-// ═══ VARIABLE MAP TAB ═══
-function VariableMapTab({ state, calc, showFormulas, setShowFormulas }) {
-  const thS = { textAlign:'left', padding:'8px 10px', fontSize:12, fontWeight:700, color:GRAY700, borderBottom:'2px solid '+GRAY200 };
-  const tdS = { padding:'6px 10px', fontSize:12, borderBottom:'1px solid '+GRAY100, color:GRAY900 };
 
-  const growthVars = [
-    ['New IPP instructors','INPUT',state.newIPPInstructors,'Pipeline tab','IPP Revenue, Funnel'],
-    ['IPP Fee','INPUT',fmt(state.feeIPP),'Costs tab','IPP Revenue'],
-    ['IPP delivery cost','INPUT',fmt(state.costPerIPP),'Costs tab','Total Cost'],
-    ['IPP to License rate','ASSUMPTION',state.pctIPPtoLicense+'%','Pipeline tab','Licensed org count'],
-    ['Grant revenue','INPUT',fmt(calc.grantRevenue),'Funders (' + (state.funders||[]).length + ')','Total Revenue, Stability'],
-    ['New licensed orgs','OUTPUT',calc.newLicensedOrgs.toFixed(1),'IPP x conv rate','License Rev, Cohort vol'],
-    ['IPP Revenue','OUTPUT',fmt(calc.ippRevenue),'Instructors x IPP fee','Total Revenue'],
-    ['IPP Cost','OUTPUT',fmt(calc.ippCostTotal),'Instructors x IPP cost','Total Cost'],
-  ];
-  const revenueVars = [
-    ['Active licensed orgs','INPUT',calc.totalPartners,'Partners tab','License rev, cohort vol'],
-    ['License fee (Tier 1)','INPUT',fmt(state.tierFees[0]),'Partners tab','License Revenue'],
-    ['Renewal rate','ASSUMPTION',state.renewalRate+'%','Costs tab','Retained partners'],
-    ['Dormant partner rate','ASSUMPTION',state.dormantRate+'%','Costs tab','Effective cohort vol'],
-    ['% orgs to cohort','ASSUMPTION',state.pctLicenseToActive+'%','Pipeline tab','Cohort count, revenue'],
-    ['Cohorts per org/yr','INPUT',state.cohortsPerOrg,'Pipeline tab','Cohort rev + cost'],
-    ['Cohort fee','INPUT',fmt(state.feeCohort),'Costs tab','Cohort Revenue'],
-    ['Cohort processing cost','INPUT',fmt(state.costPerCohort),'Costs tab','Total Cost'],
-    ['Avg participants','ASSUMPTION',state.avgParticipants,'Pipeline tab (cap 15)','Certs issued'],
-    ['Cert overage fee','INPUT',fmt(state.feeCertOverage),'Costs tab','Cert Revenue'],
-    ['License Revenue','OUTPUT',fmt(calc.licenseRevenue),'Partners x tier fee','Total Rev, Stability'],
-    ['Cohort Revenue','OUTPUT',fmt(calc.cohortRevenue),'Cohorts x cohort fee','Total Rev, Stability'],
-    ['Certs Issued','OUTPUT',Math.round(calc.certsIssued),'Cohorts x avg participants','Cert Rev, Cert Cost'],
-  ];
-  const costVars = [
-    ['Staff base time','INPUT',fmt(state.costStaff),'Costs tab','Total Cost'],
-    ['LMS','INPUT',fmt(state.costLMS),'Costs tab','Total Cost'],
-    ['Accreditation/ANSI','INPUT',fmt(state.costAccreditation),'Costs tab','Total Cost'],
-    ['Airtable + Systems','INPUT',fmt(state.costSystems),'Costs tab','Total Cost'],
-    ['Fixed Total','OUTPUT',fmt(calc.fixedTotal),'Sum above','Net Margin'],
-    ['Total Cost','OUTPUT',fmt(calc.totalCost),'All costs','Net Margin'],
-  ];
-
-  const renderTable = (title, color, rows) => (
-    <Card style={{ marginBottom:16 }}>
-      <div style={{ fontSize:14, fontWeight:700, color:color, marginBottom:12 }}>{title}</div>
-      <div style={{ overflowX:'auto' }}>
-        <table style={{ width:'100%', borderCollapse:'collapse' }}>
-          <thead><tr>
-            <th style={thS}>Variable</th><th style={thS}>Type</th><th style={thS}>Current Value</th>
-            {showFormulas && <th style={thS}>Formula / Source</th>}
-            <th style={thS}>Drives</th>
-          </tr></thead>
-          <tbody>{rows.map((row, i) => (
-            <tr key={i} style={{ background:i%2===0?'white':GRAY50 }}>
-              <td style={{ ...tdS, fontWeight:600 }}>{row[0]}</td>
-              <td style={tdS}><Badge type={row[1]} /></td>
-              <td style={tdS}>{row[2]}</td>
-              {showFormulas && <td style={tdS}>{row[3]}</td>}
-              <td style={tdS}>{row[4]}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    </Card>
-  );
-
-  const exportCSV = () => {
-    const allRows = [...growthVars.map(r=>['Growth',...r]),...revenueVars.map(r=>['Revenue',...r]),...costVars.map(r=>['Cost',...r])];
-    const header = 'Section,Variable,Type,CurrentValue,Formula,Drives';
-    const csv = [header, ...allRows.map(r=>r.map(v=>'"'+v+'"').join(','))].join('\n');
-    const blob = new Blob([csv], { type:'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'cwc-variable-map-'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div>
-      <div style={{ display:'flex', gap:12, marginBottom:16 }}>
-        <button onClick={()=>setShowFormulas(!showFormulas)} style={{
-          padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
-          background:showFormulas?BLUE:'white', color:showFormulas?'white':GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
-        }}>{showFormulas?'Hide Formulas':'Show Formulas'}</button>
-        <button onClick={exportCSV} style={{
-          padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
-          background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
-        }}>Export CSV</button>
-      </div>
-      {renderTable('GROWTH ENGINE \u00B7 IPP \u00B7 Grants \u00B7 New Partners', TEAL, growthVars)}
-      {renderTable('REVENUE ENGINE \u00B7 Membership \u00B7 Cohort Fees \u00B7 Certificates', BLUE, revenueVars)}
-      {renderTable('FIXED & HIDDEN COSTS', RED, costVars)}
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap', padding:16, background:'white', border:'1.5px solid '+GRAY200, borderRadius:10 }}>
-        <StatCard label="Total Revenue" value={fmt(calc.totalRevenue)} color={BLUE} />
-        <StatCard label="Total Cost" value={fmt(calc.totalCost)} color={RED} />
-        <StatCard label="Net Margin" value={fmt(calc.netMargin)} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
-        <StatCard label="Break-Even" value={calc.breakEvenPartners!=null?calc.breakEvenPartners+' partners':'N/A'} color={PURPLE} />
-        <StatCard label="Stability" value={pct(calc.stabilityScore)} color={TEAL} />
-      </div>
-    </div>
-  );
-}
 
 // ═══ SENSITIVITY TAB ═══
 function SensitivityTab({ data, overlay, setOverlay, lens, setLens }) {
