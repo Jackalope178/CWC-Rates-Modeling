@@ -452,11 +452,10 @@ function App() {
 
       {/* STAT CARDS */}
       <div style={{ display:'flex', gap:12, padding:'16px 24px', flexWrap:'wrap', position:'sticky', top:0, zIndex:10, background:GRAY100 }}>
-        <StatCard label="Current Revenue" value={fmt(calc.totalRevenue)} sub={calc.totalPartners+' partners'} color={BLUE} />
-        <StatCard label="Model A Revenue" value={fmt(calc.maTotalRev)} sub={'Per-cohort'+(state.modelA_pilotEnabled?' + pilot':'')} color={TEAL} />
-        <StatCard label="Model B Revenue" value={fmt(calc.mbTotalRev)} sub={'Packages'+(state.modelB_pilotEnabled?' + pilot':'')} color={PURPLE} />
-        <StatCard label="Costs" value={fmt(calc.totalCost)} color={RED} />
-        <StatCard label="Current Margin" value={fmt(calc.netMargin)} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
+        <StatCard label="Current Profit" value={fmt(calc.netMargin)} sub={fmt(calc.totalRevenue)+' revenue'} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
+        <StatCard label="Model A Profit" value={fmt(calc.maNetMargin)} sub={fmt(calc.maTotalRev)+' revenue'} color={calc.maNetMargin>=0?GREEN:RED} highlight={true} />
+        <StatCard label="Model B Profit" value={fmt(calc.mbNetMargin)} sub={fmt(calc.mbTotalRev)+' revenue'} color={calc.mbNetMargin>=0?GREEN:RED} highlight={true} />
+        <StatCard label="Total Costs" value={fmt(calc.totalCost)} sub={calc.totalPartners+' partners'} color={RED} />
       </div>
 
       {/* TAB BAR */}
