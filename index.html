@@ -179,32 +179,32 @@ function App() {
   const [sensitivityOverlay, setSensitivityOverlay] = useState('None');
   const [sensitivityLens, setSensitivityLens] = useState(false);
   const [saves, setSaves] = useState([]);
-  const [currentSaveId, setCurrentSaveId] = useState(null);
-  const [currentSaveName, setCurrentSaveName] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newSaveName, setNewSaveName] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const autosaveIdRef = React.useRef(null);
 
   // Auto-load: on mount, look for autosave slot and restore it
   useEffect(() => {
     (async () => {
-      const allSaves = await loadSaves();
-      setSaves(allSaves);
-      const autosave = allSaves.find(s => s.name === '__autosave__');
-      if (autosave) {
-        const data = await loadState(autosave.id);
-        if (data) {
-          setState({ ...defaults, ...data });
-          setCurrentSaveId(autosave.id);
-          setCurrentSaveName('');
+      try {
+        const allSaves = await loadSaves();
+        setSaves(allSaves);
+        const autosave = allSaves.find(s => s.name === '__autosave__');
+        if (autosave) {
+          const data = await loadState(autosave.id);
+          if (data) {
+            setState({ ...defaults, ...data });
+            autosaveIdRef.current = autosave.id;
+          }
         }
-      }
+      } catch(e) { console.error('Auto-load failed:', e); }
       setLoaded(true);
     })();
   }, []);
 
-  // Auto-save debounce: always save to autosave slot 2s after any change
+  // Auto-save: 2s after any change, save to autosave slot
   const saveTimerRef = React.useRef(null);
   const loadedRef = React.useRef(false);
   useEffect(() => { loadedRef.current = loaded; }, [loaded]);
@@ -212,23 +212,20 @@ function App() {
     if (!loadedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
-      // Upsert autosave slot
-      if (currentSaveId) {
-        await saveState(null, state, currentSaveId);
-      } else {
-        // Check if autosave exists
-        const allSaves = await loadSaves();
-        const autosave = allSaves.find(s => s.name === '__autosave__');
-        if (autosave) {
-          await saveState(null, state, autosave.id);
-          setCurrentSaveId(autosave.id);
+      try {
+        if (autosaveIdRef.current) {
+          await saveState(null, state, autosaveIdRef.current);
         } else {
           const result = await saveState('__autosave__', state, null);
-          if (result) setCurrentSaveId(result.id);
+          if (result) autosaveIdRef.current = result.id;
         }
+        setSaveStatus('Saved');
+        setTimeout(() => setSaveStatus(''), 1500);
+      } catch(e) {
+        console.error('Auto-save failed:', e);
+        setSaveStatus('Save failed');
+        setTimeout(() => setSaveStatus(''), 3000);
       }
-      setSaveStatus('Saved');
-      setTimeout(() => setSaveStatus(''), 1500);
     }, 2000);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state]);
