@@ -92,6 +92,14 @@ const defaults = {
   pilotFee: 2000, pilotFullFee: 4050, pilotDuration: 1, pilotPartners: 3, pilotConvertPct: 70,
   consortiumFee: 9000, consortiumPartners: 3, consortiumCohorts: 1, consortiumNewPct: 50,
   sponsoredFee: 0, sponsoredListPrice: 4050, sponsoredPartners: 2, sponsoredGrant: 0, sponsoredFunderName: 'Funder',
+  // --- COHORT-BASED PRICING MODEL ---
+  cohortModelAnnualFee: 2500,     // flat annual partner fee (not tied to instructors)
+  cohortModelSmallFee: 500,       // per-cohort fee for small cohorts (< threshold)
+  cohortModelLargeFee: 800,       // per-cohort fee for large cohorts (>= threshold)
+  cohortModelThreshold: 8,        // participant count dividing small vs large
+  cohortModelPctSmall: 40,        // % of cohorts expected to be small
+  cohortModelCertFee: 0,          // per-cert fee (0 = included in cohort fee)
+  cohortModelEscalation: 3,       // % annual fee escalation
   // --- FORECAST (5-year) ---
   feeEscalation: 3,         // % annual license fee increase
   ippFeeYr2: 2000, ippFeeYr3: 2000, ippFeeYr4: 2000, ippFeeYr5: 2000,
@@ -339,13 +347,25 @@ function App() {
     const sponsoredGap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
     const sponsoredCWPMargin = netMargin - sponsoredGap;
     const sponsoredFunderMargin = netMargin;
+
+    // COHORT-BASED PRICING MODEL (alternative)
+    const cmSmallCohorts = Math.round(totalCohorts * (s.cohortModelPctSmall / 100));
+    const cmLargeCohorts = Math.round(totalCohorts * (1 - s.cohortModelPctSmall / 100));
+    const cmAnnualRev = totalPartners * s.cohortModelAnnualFee;
+    const cmCohortRev = cmSmallCohorts * s.cohortModelSmallFee + cmLargeCohorts * s.cohortModelLargeFee;
+    const cmCertRev = s.cohortModelCertFee > 0 ? certsIssued * s.cohortModelCertFee : 0;
+    const cmTotalRevenue = cmAnnualRev + cmCohortRev + cmCertRev + ippRevenue + grantRevenue;
+    const cmNetMargin = cmTotalRevenue - totalCost;
+    const cmRevDiff = cmTotalRevenue - totalRevenue;
+
     return { fixedTotal, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
       newLicensedOrgs, activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue, ippCostTotal, cohortCostTotal, certCostTotal,
       totalCost, netMargin, marginPct, recurringRevenue, stabilityScore, netPerPartner, breakEvenPartners,
       pilotYr1Revenue, pilotYr1Margin, pilotYr2Revenue, pilotYr2Margin, pilotDrag,
       consortiumRevenue, consortiumCost, consortiumMargin, equivalentRevenue, consortiumSaving,
-      sponsoredGap, sponsoredCWPMargin, sponsoredFunderMargin };
+      sponsoredGap, sponsoredCWPMargin, sponsoredFunderMargin,
+      cmSmallCohorts, cmLargeCohorts, cmAnnualRev, cmCohortRev, cmCertRev, cmTotalRevenue, cmNetMargin, cmRevDiff };
   }, [state]);
 
   const sensitivityData = useMemo(() => {
@@ -372,6 +392,12 @@ function App() {
         scenario = consRev - cost;
       } else if (sensitivityOverlay === 'Sponsored') {
         scenario = baseline - (s.sponsoredListPrice - s.sponsoredFee) * Math.min(s.sponsoredPartners, p);
+      } else if (sensitivityOverlay === 'Cohort-Based') {
+        const cmSmall = Math.round(coh * (s.cohortModelPctSmall / 100));
+        const cmLarge = Math.round(coh * (1 - s.cohortModelPctSmall / 100));
+        const cmRev = p * s.cohortModelAnnualFee + cmSmall * s.cohortModelSmallFee + cmLarge * s.cohortModelLargeFee
+          + (s.cohortModelCertFee > 0 ? parts * s.cohortModelCertFee : 0) + s.newIPPInstructors * s.feeIPP + grantTotal;
+        scenario = cmRev - cost;
       }
       let lens = null;
       if (sensitivityLens) { lens = licRev + coh * 500 + overages * s.feeCertOverage - cost; }
@@ -453,6 +479,15 @@ function App() {
       if (s.forecastScenario === 'sponsored') {
         const gap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
         totalRev -= gap;
+      }
+      if (s.forecastScenario === 'cohort-model') {
+        const cmEsc = Math.pow(1 + s.cohortModelEscalation / 100, yr);
+        const cmSmall = Math.round(cohorts * (s.cohortModelPctSmall / 100));
+        const cmLarge = Math.round(cohorts * (1 - s.cohortModelPctSmall / 100));
+        const cmAnnual = partners * s.cohortModelAnnualFee * cmEsc;
+        const cmCohort = cmSmall * s.cohortModelSmallFee * cmEsc + cmLarge * s.cohortModelLargeFee * cmEsc;
+        const cmCert = s.cohortModelCertFee > 0 ? participants * s.cohortModelCertFee : 0;
+        totalRev = cmAnnual + cmCohort + cmCert + ippRev + grantRev;
       }
 
       // Costs — staff gets its own raise rate, others get general inflation
@@ -594,21 +629,125 @@ function App() {
 
 // ═══ SCENARIOS TAB ═══
 function ScenariosTab({ state, calc, set, scenarioMode, setScenarioMode }) {
-  const modes = [{key:'pilot',label:'Pilot License'},{key:'consortium',label:'Consortium'},{key:'sponsored',label:'Sponsored'}];
+  const modes = [{key:'cohort-model',label:'Cohort-Based Pricing'},{key:'pilot',label:'Pilot License'},{key:'consortium',label:'Consortium'},{key:'sponsored',label:'Sponsored'}];
   return (
     <div>
-      <div style={{ display:'flex', gap:0, background:GRAY100, borderRadius:8, padding:3, marginBottom:20, border:'1px solid '+GRAY200 }}>
+      <div style={{ display:'flex', gap:0, background:GRAY100, borderRadius:8, padding:3, marginBottom:20, border:'1px solid '+GRAY200, flexWrap:'wrap' }}>
         {modes.map(m => (
           <button key={m.key} onClick={() => setScenarioMode(m.key)} style={{
-            flex:1, padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer',
+            flex:'1 1 auto', padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer',
             background:scenarioMode===m.key?'white':'transparent', color:scenarioMode===m.key?PURPLE:GRAY500,
             boxShadow:scenarioMode===m.key?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif"
           }}>{m.label}</button>
         ))}
       </div>
+      {scenarioMode==='cohort-model' && <CohortModelPanel state={state} calc={calc} set={set} />}
       {scenarioMode==='pilot' && <PilotPanel state={state} calc={calc} set={set} />}
       {scenarioMode==='consortium' && <ConsortiumPanel state={state} calc={calc} set={set} />}
       {scenarioMode==='sponsored' && <SponsoredPanel state={state} calc={calc} set={set} />}
+    </div>
+  );
+}
+
+function CohortModelPanel({ state, calc, set }) {
+  const s = state;
+  const c = calc;
+
+  // Build comparison data for chart
+  const compData = useMemo(() => {
+    const arr = [];
+    for (let p = 1; p <= 20; p++) {
+      const effP = p * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
+      const actOrgs = effP * (s.pctLicenseToActive / 100);
+      const coh = actOrgs * s.cohortsPerOrg;
+      const parts = coh * s.avgParticipants;
+
+      // Current model
+      const currLicRev = p * s.tierFees[0];
+      const currCohRev = coh * s.feeCohort;
+      const currCertRev = Math.max(0, parts - p * 15) * s.feeCertOverage;
+      const currTotal = currLicRev + currCohRev + currCertRev;
+
+      // Cohort model
+      const smCoh = Math.round(coh * (s.cohortModelPctSmall / 100));
+      const lgCoh = Math.round(coh * (1 - s.cohortModelPctSmall / 100));
+      const cmAnnual = p * s.cohortModelAnnualFee;
+      const cmCohort = smCoh * s.cohortModelSmallFee + lgCoh * s.cohortModelLargeFee;
+      const cmCert = s.cohortModelCertFee > 0 ? parts * s.cohortModelCertFee : 0;
+      const cmTotal = cmAnnual + cmCohort + cmCert;
+
+      arr.push({ partners: p, 'Current Model': Math.round(currTotal), 'Cohort Model': Math.round(cmTotal) });
+    }
+    return arr;
+  }, [state]);
+
+  return (
+    <div>
+      <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
+        Cohort-Based Pricing Model
+        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>What if annual fees are based on cohort volume instead of instructor count?</div>
+      </div>
+      <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
+        <SectionDivider label="Cohort Model Pricing" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
+          <SliderField label="Annual partner fee (flat)" value={s.cohortModelAnnualFee} min={0} max={15000} step={100} onChange={v=>set('cohortModelAnnualFee',v)} prefix="$" note="Per partner, replaces instructor-based license" />
+          <SliderField label="Small cohort threshold" value={s.cohortModelThreshold} min={2} max={15} onChange={v=>set('cohortModelThreshold',v)} note="Participants below this = small cohort" />
+          <SliderField label="Small cohort fee (< {s.cohortModelThreshold} participants)" value={s.cohortModelSmallFee} min={0} max={3000} step={25} onChange={v=>set('cohortModelSmallFee',v)} prefix="$" />
+          <SliderField label="Large cohort fee ({s.cohortModelThreshold}+ participants)" value={s.cohortModelLargeFee} min={0} max={3000} step={25} onChange={v=>set('cohortModelLargeFee',v)} prefix="$" />
+          <SliderField label="% of cohorts that are small" value={s.cohortModelPctSmall} min={0} max={100} onChange={v=>set('cohortModelPctSmall',v)} unit="%" />
+          <SliderField label="Per-certificate fee" value={s.cohortModelCertFee} min={0} max={100} step={5} onChange={v=>set('cohortModelCertFee',v)} prefix="$" note="0 = included in cohort fee" />
+        </div>
+
+        <SectionDivider label="Side-by-Side Comparison" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <Card style={{ background:GRAY50 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:BLUE, marginBottom:10 }}>Current Model (Instructor Tiers)</div>
+            <div style={{ fontSize:12, marginBottom:4 }}>License Revenue: <strong>{fmt(c.licenseRevenue)}</strong></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>Cohort Fees: <strong>{fmt(c.cohortRevenue)}</strong></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>Cert Overage: <strong>{fmt(c.certOverageRev)}</strong></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
+            <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:8, marginTop:8 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:BLUE }}>Total: {fmt(c.totalRevenue)}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:c.netMargin>=0?GREEN:RED }}>Margin: {fmt(c.netMargin)}</div>
+            </div>
+          </Card>
+          <Card style={{ background:'#faf5ff' }}>
+            <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:10 }}>Cohort-Based Model</div>
+            <div style={{ fontSize:12, marginBottom:4 }}>Annual Partner Fees: <strong>{fmt(c.cmAnnualRev)}</strong>
+              <span style={{ color:GRAY500 }}> ({c.totalPartners} x {fmt(s.cohortModelAnnualFee)})</span></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>Small Cohort Fees: <strong>{fmt(c.cmSmallCohorts * s.cohortModelSmallFee)}</strong>
+              <span style={{ color:GRAY500 }}> ({c.cmSmallCohorts} x {fmt(s.cohortModelSmallFee)})</span></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>Large Cohort Fees: <strong>{fmt(c.cmLargeCohorts * s.cohortModelLargeFee)}</strong>
+              <span style={{ color:GRAY500 }}> ({c.cmLargeCohorts} x {fmt(s.cohortModelLargeFee)})</span></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>Cert Fees: <strong>{fmt(c.cmCertRev)}</strong></div>
+            <div style={{ fontSize:12, marginBottom:4 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
+            <div style={{ borderTop:'1px solid '+PURPLE+'33', paddingTop:8, marginTop:8 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:PURPLE }}>Total: {fmt(c.cmTotalRevenue)}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:c.cmNetMargin>=0?GREEN:RED }}>Margin: {fmt(c.cmNetMargin)}</div>
+            </div>
+          </Card>
+        </div>
+
+        <div style={{ background:c.cmRevDiff>=0?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.cmRevDiff>=0?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
+          Cohort model generates <strong style={{ color:c.cmRevDiff>=0?GREEN:RED }}>{fmt(Math.abs(c.cmRevDiff))} {c.cmRevDiff>=0?'more':'less'}</strong> revenue than current model
+        </div>
+
+        <SectionDivider label="Revenue by Partner Count" />
+        <div style={{ width:'100%', height:280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={compData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="partners" label={{ value:'# Partners', position:'insideBottom', offset:-2, fontSize:11 }} fontSize={11} />
+              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+              <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+' partners'} />
+              <Legend />
+              <Line type="monotone" dataKey="Current Model" stroke={BLUE} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Cohort Model" stroke={PURPLE} strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Comparison uses Tier 1 fee as baseline for current model. Costs are identical between models.</div>
+      </Card>
     </div>
   );
 }
@@ -1090,7 +1229,7 @@ function SensitivityTab({ data, overlay, setOverlay, lens, setLens }) {
           <div>
             <label style={{ fontSize:12, fontWeight:600, color:GRAY700, marginRight:6 }}>Overlay scenario:</label>
             <select value={overlay} onChange={e=>setOverlay(e.target.value)} style={{ padding:'4px 8px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:6 }}>
-              <option>None</option><option>Pilot</option><option>Consortium</option><option>Sponsored</option>
+              <option>None</option><option>Cohort-Based</option><option>Pilot</option><option>Consortium</option><option>Sponsored</option>
             </select>
           </div>
           <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color:GRAY700, cursor:'pointer' }}>
@@ -1245,7 +1384,7 @@ function ForecastTab({ state, calc, forecast, set }) {
         </div>
         <SectionDivider label="Scenario Overlay" />
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          {[{k:'none',l:'No Scenario'},{k:'pilot',l:'Pilot'},{k:'consortium',l:'Consortium'},{k:'sponsored',l:'Sponsored'}].map(o => (
+          {[{k:'none',l:'No Scenario'},{k:'cohort-model',l:'Cohort-Based'},{k:'pilot',l:'Pilot'},{k:'consortium',l:'Consortium'},{k:'sponsored',l:'Sponsored'}].map(o => (
             <button key={o.k} onClick={()=>set('forecastScenario',o.k)} style={{
               padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
               background:state.forecastScenario===o.k?PURPLE:'white', color:state.forecastScenario===o.k?'white':GRAY700,
