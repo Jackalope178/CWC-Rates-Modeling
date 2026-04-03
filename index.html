@@ -183,29 +183,74 @@ function App() {
   const [saveStatus, setSaveStatus] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newSaveName, setNewSaveName] = useState('');
+  const [loaded, setLoaded] = useState(false);
 
-  // Load saved states list on mount
-  useEffect(() => { loadSaves().then(setSaves); }, []);
-
-  // Auto-save debounce: save to current slot 2s after last change
-  const saveTimerRef = React.useRef(null);
+  // Auto-load: on mount, look for autosave slot and restore it
   useEffect(() => {
-    if (!currentSaveId) return;
+    (async () => {
+      const allSaves = await loadSaves();
+      setSaves(allSaves);
+      const autosave = allSaves.find(s => s.name === '__autosave__');
+      if (autosave) {
+        const data = await loadState(autosave.id);
+        if (data) {
+          setState({ ...defaults, ...data });
+          setCurrentSaveId(autosave.id);
+          setCurrentSaveName('');
+        }
+      }
+      setLoaded(true);
+    })();
+  }, []);
+
+  // Auto-save debounce: always save to autosave slot 2s after any change
+  const saveTimerRef = React.useRef(null);
+  const loadedRef = React.useRef(false);
+  useEffect(() => { loadedRef.current = loaded; }, [loaded]);
+  useEffect(() => {
+    if (!loadedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
-      await saveState(null, state, currentSaveId);
-      setSaveStatus('Auto-saved');
-      setTimeout(() => setSaveStatus(''), 2000);
+      // Upsert autosave slot
+      if (currentSaveId) {
+        await saveState(null, state, currentSaveId);
+      } else {
+        // Check if autosave exists
+        const allSaves = await loadSaves();
+        const autosave = allSaves.find(s => s.name === '__autosave__');
+        if (autosave) {
+          await saveState(null, state, autosave.id);
+          setCurrentSaveId(autosave.id);
+        } else {
+          const result = await saveState('__autosave__', state, null);
+          if (result) setCurrentSaveId(result.id);
+        }
+      }
+      setSaveStatus('Saved');
+      setTimeout(() => setSaveStatus(''), 1500);
     }, 2000);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [state, currentSaveId]);
+  }, [state]);
+
+  // Also save to named snapshot if one is active
+  const namedSaveTimerRef = React.useRef(null);
+  const [activeSaveId, setActiveSaveId] = useState(null);
+  const [activeSaveName, setActiveSaveName] = useState('');
+  useEffect(() => {
+    if (!loadedRef.current || !activeSaveId) return;
+    if (namedSaveTimerRef.current) clearTimeout(namedSaveTimerRef.current);
+    namedSaveTimerRef.current = setTimeout(async () => {
+      await saveState(null, state, activeSaveId);
+    }, 2500);
+    return () => { if (namedSaveTimerRef.current) clearTimeout(namedSaveTimerRef.current); };
+  }, [state, activeSaveId]);
 
   const handleSaveNew = async () => {
     const name = newSaveName.trim() || ('Save ' + new Date().toLocaleDateString());
     const result = await saveState(name, state, null);
     if (result) {
-      setCurrentSaveId(result.id);
-      setCurrentSaveName(name);
+      setActiveSaveId(result.id);
+      setActiveSaveName(name);
       setSaveStatus('Saved!');
       setTimeout(() => setSaveStatus(''), 2000);
       setSaves(await loadSaves());
@@ -215,12 +260,14 @@ function App() {
   };
 
   const handleLoad = async (id) => {
-    const loaded = await loadState(id);
-    if (loaded) {
-      setState({ ...defaults, ...loaded });
-      setCurrentSaveId(id);
+    const loadedData = await loadState(id);
+    if (loadedData) {
+      setState({ ...defaults, ...loadedData });
       const s = saves.find(s => s.id === id);
-      setCurrentSaveName(s ? s.name : '');
+      if (s && s.name !== '__autosave__') {
+        setActiveSaveId(id);
+        setActiveSaveName(s.name);
+      }
       setSaveStatus('Loaded');
       setTimeout(() => setSaveStatus(''), 2000);
     }
@@ -228,7 +275,7 @@ function App() {
 
   const handleDelete = async (id) => {
     if (await deleteSave(id)) {
-      if (currentSaveId === id) { setCurrentSaveId(null); setCurrentSaveName(''); }
+      if (activeSaveId === id) { setActiveSaveId(null); setActiveSaveName(''); }
       setSaves(await loadSaves());
     }
   };
@@ -457,40 +504,33 @@ function App() {
             <h1 style={{ fontSize:20, fontWeight:700, color:GRAY900, margin:0 }}>CWC Fee Strategy Model</h1>
             <p style={{ fontSize:12, color:GRAY500, margin:'2px 0 0' }}>
               Internal planning tool — model pricing, costs, and revenue scenarios
-              {currentSaveName && <span style={{ color:BLUE, fontWeight:600 }}> — {currentSaveName}</span>}
+              {activeSaveName && <span style={{ color:BLUE, fontWeight:600 }}> — {activeSaveName}</span>}
               {saveStatus && <span style={{ color:GREEN, marginLeft:8 }}>{saveStatus}</span>}
             </p>
           </div>
           <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-            {/* Save current */}
-            {currentSaveId ? (
-              <button onClick={async () => { await saveState(null, state, currentSaveId); setSaveStatus('Saved!'); setTimeout(()=>setSaveStatus(''),2000); setSaves(await loadSaves()); }}
-                style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-                Save
-              </button>
-            ) : null}
-            {/* Save As */}
+            {/* Save As (named snapshot) */}
             <button onClick={() => setShowSaveDialog(true)}
               style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+BLUE, background:BLUE, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-              Save As
+              Save Snapshot
             </button>
-            {/* Load dropdown */}
-            {saves.length > 0 && (
+            {/* Load dropdown — only show named saves, not autosave */}
+            {saves.filter(s => s.name !== '__autosave__').length > 0 && (
               <select onChange={e => { if (e.target.value) handleLoad(e.target.value); e.target.value = ''; }}
                 defaultValue="" style={{ padding:'6px 8px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:6, color:GRAY700, fontFamily:"'Inter',sans-serif" }}>
-                <option value="" disabled>Load save...</option>
-                {saves.map(s => <option key={s.id} value={s.id}>{s.name} — {new Date(s.updated_at).toLocaleDateString()}</option>)}
+                <option value="" disabled>Load snapshot...</option>
+                {saves.filter(s => s.name !== '__autosave__').map(s => <option key={s.id} value={s.id}>{s.name} — {new Date(s.updated_at).toLocaleDateString()}</option>)}
               </select>
             )}
-            {/* Delete current */}
-            {currentSaveId && (
-              <button onClick={() => { if (confirm('Delete "'+currentSaveName+'"?')) handleDelete(currentSaveId); }}
+            {/* Delete active snapshot */}
+            {activeSaveId && (
+              <button onClick={() => { if (confirm('Delete "'+activeSaveName+'"?')) handleDelete(activeSaveId); }}
                 style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+RED, background:'white', color:RED, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
                 Delete
               </button>
             )}
             {/* Reset to defaults */}
-            <button onClick={() => { setState({...defaults}); setCurrentSaveId(null); setCurrentSaveName(''); }}
+            <button onClick={() => { setState({...defaults}); setActiveSaveId(null); setActiveSaveName(''); }}
               style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
               Reset
             </button>
