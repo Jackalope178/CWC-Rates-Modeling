@@ -795,7 +795,7 @@ function CostsTab({ state, calc, set }) {
     <div>
       <Card style={{ marginBottom:16 }}>
         <SectionDivider label="Fixed Costs (Annual)" />
-        <SliderField label="Staff base time" value={state.costStaff} min={0} max={50000} step={500} onChange={v=>set('costStaff',v)} prefix="$" />
+        <SliderField label="Staff base time" value={state.costStaff} min={0} max={120000} step={500} onChange={v=>set('costStaff',v)} prefix="$" />
         <SliderField label="LMS (Thinkific)" value={state.costLMS} min={0} max={5000} step={50} onChange={v=>set('costLMS',v)} prefix="$" />
         <SliderField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={15000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
         <SliderField label="Airtable + Systems" value={state.costSystems} min={0} max={5000} step={50} onChange={v=>set('costSystems',v)} prefix="$" />
