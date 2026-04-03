@@ -519,11 +519,15 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
               </div>
             ))}
             <button onClick={()=>set('customTiers',[...(state.customTiers||[]),{label:'',instructors:1,fee:0,count:0}])} style={{ padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+PURPLE+'44', background:'#faf5ff', color:PURPLE, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>+ Custom Rate</button>
-            <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200 }}>
+            <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, flexWrap:'wrap' }}>
               <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Partners</div><div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{calc.totalPartners}</div></div>
               <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>License Rev</div><div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.licenseRevenue)}</div></div>
+              <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Certs Included</div><div style={{ fontSize:18, fontWeight:700, color:GRAY900 }}>{calc.certsIncluded}</div></div>
+              <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Certs Issued</div><div style={{ fontSize:18, fontWeight:700, color:calc.certOverages>0?AMBER:GRAY900 }}>{Math.round(calc.certsIssued)}</div></div>
+              {calc.certOverages > 0 && <div><div style={{ fontSize:10, textTransform:'uppercase', color:AMBER }}>Overages ({Math.round(calc.certOverages)})</div><div style={{ fontSize:18, fontWeight:700, color:AMBER }}>{fmt(calc.certOverageRev)}</div></div>}
               <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Margin</div><div style={{ fontSize:18, fontWeight:700, color:calc.netMargin>=0?GREEN:RED }}>{fmt(calc.netMargin)}</div></div>
             </div>
+            <div style={{ fontSize:11, color:GRAY500, marginTop:6 }}>Each partner includes 15 certificates. Beyond that: {fmt(state.feeCertOverage)}/cert overage fee.</div>
           </Card>
           <Card>
             <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
