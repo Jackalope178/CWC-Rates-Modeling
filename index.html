@@ -29,14 +29,12 @@ const {
   Tooltip, Legend, ResponsiveContainer, ReferenceLine, Cell
 } = Recharts;
 
-// Design Tokens
 const BLUE='#1d4ed8',TEAL='#0891b2',PURPLE='#7c3aed',GREEN='#16a34a',RED='#ef4444',ORANGE='#f97316',AMBER='#f59e0b';
 const GRAY50='#f9fafb',GRAY100='#f3f4f6',GRAY200='#e5e7eb',GRAY400='#9ca3af',GRAY500='#6b7280',GRAY700='#374151',GRAY900='#111827';
 
 // ═══ SUPABASE ═══
 const SUPABASE_URL = 'https://uihhlmyydgfyrlbdpmuw.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpaGhsbXl5ZGdmeXJsYmRwbXV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjE2NzUsImV4cCI6MjA5MDc5NzY3NX0.C9qjCYmT_q217Z2sgAsWysnNQcHYGFZRWYXBV4Iglfs';
-// Find createClient from however the CDN exposes it
 let supabase = null;
 try {
   const _sb = window.supabase || window.Supabase;
@@ -80,39 +78,52 @@ const TIERS = [
 ];
 
 const defaults = {
+  // --- CURRENT STATE: partners ---
   partnerCounts: [5, 0, 0, 0, 0, 0, 0],
   tierFees: [4050, 6800, 9000, 11310, 13120, 14940, 22750],
-  customTiers: [],  // array of { label: string, instructors: number, fee: number, count: number }
+  customTiers: [],
+  // --- CURRENT STATE: costs ---
   costStaff: 20000, costLMS: 600, costAccreditation: 3000, costSystems: 500,
   costPerIPP: 400, costPerCohort: 300, costPerCert: 10,
+  // --- CURRENT STATE: revenue ---
   feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
-  funders: [],  // array of { name: string, amount: number }
+  funders: [],
+  // --- CURRENT STATE: pipeline ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
-  pilotFee: 2000, pilotFullFee: 4050, pilotDuration: 1, pilotPartners: 3, pilotConvertPct: 70,
-  consortiumFee: 9000, consortiumPartners: 3, consortiumCohorts: 1, consortiumNewPct: 50,
-  sponsoredFee: 0, sponsoredListPrice: 4050, sponsoredPartners: 2, sponsoredGrant: 0, sponsoredFunderName: 'Funder',
-  // --- COHORT-BASED PRICING MODEL ---
-  cohortModelAnnualFee: 2500,     // flat annual partner fee (not tied to instructors)
-  cohortModelSmallFee: 500,       // per-cohort fee for small cohorts (< threshold)
-  cohortModelLargeFee: 800,       // per-cohort fee for large cohorts (>= threshold)
-  cohortModelThreshold: 8,        // participant count dividing small vs large
-  cohortModelPctSmall: 40,        // % of cohorts expected to be small
-  cohortModelCertFee: 0,          // per-cert fee (0 = included in cohort fee)
-  cohortModelEscalation: 3,       // % annual fee escalation
-  // --- FORECAST (5-year) ---
-  feeEscalation: 3,         // % annual license fee increase
-  ippFeeYr2: 2000, ippFeeYr3: 2000, ippFeeYr4: 2000, ippFeeYr5: 2000,
-  cohortFeeEscalation: 2,   // % annual cohort fee increase
-  costInflation: 3,         // % annual fixed+hidden cost inflation (non-staff)
-  variableCostInflation: 2, // % annual variable cost inflation
-  staffRaiseRate: 5,        // % annual staff cost increase
-  reaccredCost: 30000,      // reaccreditation cost (one-time)
-  reaccredYear: 2029,       // calendar year of next reaccreditation
-  forecastStartYear: 2025,  // calendar year for Year 1
-  pipelineGrowth: 10,       // % annual growth in new IPP instructors
-  grantGrowthRate: 0,       // % annual grant revenue change
-  forecastScenario: 'none', // none | pilot | consortium | sponsored
+  // --- MODEL A: Per-Cohort Pricing ---
+  modelA_annualFee: 1000,
+  modelA_smallCohortFee: 800,
+  modelA_largeCohortFee: 1200,
+  modelA_threshold: 8,
+  modelA_pctSmall: 40,
+  modelA_pilotEnabled: false,
+  modelA_pilotFee: 500,
+  modelA_pilotCohortFee: 600,
+  modelA_pilotPartners: 3,
+  modelA_pilotDuration: 1,
+  modelA_pilotConvertPct: 70,
+  // --- MODEL B: Cohort Packages ---
+  modelB_starterName: 'Starter', modelB_starterCohorts: 1, modelB_starterFee: 1500,
+  modelB_standardName: 'Standard', modelB_standardCohorts: 3, modelB_standardFee: 2800,
+  modelB_growthName: 'Growth', modelB_growthCohorts: 6, modelB_growthFee: 4500,
+  modelB_pctStarter: 50, modelB_pctStandard: 35, modelB_pctGrowth: 15,
+  modelB_pilotEnabled: false,
+  modelB_pilotFee: 1000,
+  modelB_pilotPartners: 3,
+  modelB_pilotDuration: 1,
+  modelB_pilotConvertPct: 70,
+  // --- FORECAST ---
+  feeEscalation: 3,
+  costInflation: 3,
+  variableCostInflation: 2,
+  staffRaiseRate: 5,
+  reaccredCost: 30000,
+  reaccredYear: 2029,
+  forecastStartYear: 2025,
+  pipelineGrowth: 10,
+  grantGrowthRate: 0,
+  forecastModel: 'current',
 };
 
 const fmt = (n) => {
@@ -126,7 +137,8 @@ const pct = (n) => {
   return (n * 100).toFixed(1) + '%';
 };
 
-function SliderField({ label, value, min, max, step, onChange, prefix, note, unit }) {
+// ═══ REUSABLE COMPONENTS ═══
+function InputField({ label, value, min, max, step, onChange, prefix, note, unit }) {
   const [lv, setLv] = useState(String(value));
   useEffect(() => { setLv(String(value)); }, [value]);
   const suffix = unit ? ' ' + unit : '';
@@ -138,14 +150,17 @@ function SliderField({ label, value, min, max, step, onChange, prefix, note, uni
       </div>
       <div style={{ display:'flex', gap:8, alignItems:'center' }}>
         {prefix === '$' && <span style={{ fontSize:13, color:GRAY500 }}>$</span>}
-        <input type="number" value={lv} onChange={e => { setLv(e.target.value); const v = Number(e.target.value); if (!isNaN(v)) onChange(v); }}
-          onBlur={() => { let v=Number(lv); if(isNaN(v))v=min; v=Math.max(min,Math.min(max,v)); setLv(String(v)); onChange(v); }}
+        <input type="number" value={lv} min={min} max={max} step={step||1}
+          onChange={e => { setLv(e.target.value); const v = Number(e.target.value); if (!isNaN(v)) onChange(v); }}
+          onBlur={() => { let v=Number(lv); if(isNaN(v))v=min||0; if(min!=null)v=Math.max(min,v); if(max!=null)v=Math.min(max,v); setLv(String(v)); onChange(v); }}
           style={{ width:'100%', maxWidth:160, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:14, fontWeight:600, textAlign:'right', fontFamily:"'Inter',sans-serif" }} />
         {suffix && <span style={{ fontSize:13, color:GRAY500 }}>{suffix}</span>}
       </div>
     </div>
   );
 }
+// Keep old name working
+const SliderField = InputField;
 
 function StatCard({ label, value, sub, color, highlight }) {
   return (
@@ -157,7 +172,6 @@ function StatCard({ label, value, sub, color, highlight }) {
     </div>
   );
 }
-
 function SectionDivider({ label }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:12, margin:'20px 0 16px' }}>
@@ -167,38 +181,40 @@ function SectionDivider({ label }) {
     </div>
   );
 }
-
-function Badge({ type }) {
-  const colors = { INPUT: BLUE, ASSUMPTION: AMBER, OUTPUT: GREEN };
-  return (
-    <span style={{ display:'inline-block', fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4,
-      color:'white', background: colors[type]||GRAY500, textTransform:'uppercase', letterSpacing:'0.03em' }}>{type}</span>
-  );
-}
-
 function Card({ children, style }) {
   return <div style={{ background:'white', border:'1.5px solid '+GRAY200, borderRadius:10, padding:'16px 20px', ...style }}>{children}</div>;
 }
+function Toggle({ label, value, onChange }) {
+  return (
+    <label style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer', marginBottom:12 }}>
+      <button onClick={()=>onChange(!value)} style={{
+        width:44, height:24, borderRadius:12, border:'none', cursor:'pointer',
+        background:value?PURPLE:GRAY200, position:'relative', transition:'background 0.2s' }}>
+        <span style={{ position:'absolute', top:2, left:value?22:2, width:20, height:20, borderRadius:10, background:'white', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }} />
+      </button>
+      <span style={{ fontSize:13, fontWeight:600, color:value?PURPLE:GRAY500 }}>{label}</span>
+    </label>
+  );
+}
 
-const TABS = ['Scenarios','Overview','Partners & Growth','Costs','Sensitivity','Forecast'];
+const TABS = ['Current State','What If','5-Year Outlook'];
 
 // ═══ MAIN APP ═══
 function App() {
   const [state, setState] = useState({ ...defaults });
-  const [activeTab, setActiveTab] = useState('Scenarios');
-  const [scenarioMode, setScenarioMode] = useState('pilot');
+  const [activeTab, setActiveTab] = useState('Current State');
+  const [whatIfModel, setWhatIfModel] = useState('a');
   const [editTierFees, setEditTierFees] = useState(false);
-  const [bothWorldsLens, setBothWorldsLens] = useState(false);
-  const [sensitivityOverlay, setSensitivityOverlay] = useState('None');
-  const [sensitivityLens, setSensitivityLens] = useState(false);
   const [saves, setSaves] = useState([]);
   const [saveStatus, setSaveStatus] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newSaveName, setNewSaveName] = useState('');
   const [loaded, setLoaded] = useState(false);
   const autosaveIdRef = React.useRef(null);
+  const [activeSaveId, setActiveSaveId] = useState(null);
+  const [activeSaveName, setActiveSaveName] = useState('');
 
-  // Auto-load: on mount, look for autosave slot and restore it
+  // Auto-load
   useEffect(() => {
     (async () => {
       try {
@@ -207,17 +223,14 @@ function App() {
         const autosave = allSaves.find(s => s.name === '__autosave__');
         if (autosave) {
           const data = await loadState(autosave.id);
-          if (data) {
-            setState({ ...defaults, ...data });
-            autosaveIdRef.current = autosave.id;
-          }
+          if (data) { setState({ ...defaults, ...data }); autosaveIdRef.current = autosave.id; }
         }
-      } catch(e) { console.error('Auto-load failed:', e); }
+      } catch(e) {}
       setLoaded(true);
     })();
   }, []);
 
-  // Auto-save: 2s after any change, save to autosave slot
+  // Auto-save
   const saveTimerRef = React.useRef(null);
   const loadedRef = React.useRef(false);
   useEffect(() => { loadedRef.current = loaded; }, [loaded]);
@@ -226,90 +239,46 @@ function App() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        if (autosaveIdRef.current) {
-          await saveState(null, state, autosaveIdRef.current);
-        } else {
+        if (autosaveIdRef.current) { await saveState(null, state, autosaveIdRef.current); }
+        else {
           const result = await saveState('__autosave__', state, null);
           if (result) autosaveIdRef.current = result.id;
         }
-        setSaveStatus('Saved');
-        setTimeout(() => setSaveStatus(''), 1500);
-      } catch(e) {
-        console.error('Auto-save failed:', e);
-        setSaveStatus('Save failed');
-        setTimeout(() => setSaveStatus(''), 3000);
-      }
+        setSaveStatus('Saved'); setTimeout(() => setSaveStatus(''), 1500);
+      } catch(e) { setSaveStatus('Save failed'); setTimeout(() => setSaveStatus(''), 3000); }
     }, 2000);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state]);
 
-  // Also save to named snapshot if one is active
-  const namedSaveTimerRef = React.useRef(null);
-  const [activeSaveId, setActiveSaveId] = useState(null);
-  const [activeSaveName, setActiveSaveName] = useState('');
-  useEffect(() => {
-    if (!loadedRef.current || !activeSaveId) return;
-    if (namedSaveTimerRef.current) clearTimeout(namedSaveTimerRef.current);
-    namedSaveTimerRef.current = setTimeout(async () => {
-      await saveState(null, state, activeSaveId);
-    }, 2500);
-    return () => { if (namedSaveTimerRef.current) clearTimeout(namedSaveTimerRef.current); };
-  }, [state, activeSaveId]);
-
   const handleSaveNew = async () => {
     const name = newSaveName.trim() || ('Save ' + new Date().toLocaleDateString());
     const result = await saveState(name, state, null);
-    if (result) {
-      setActiveSaveId(result.id);
-      setActiveSaveName(name);
-      setSaveStatus('Saved!');
-      setTimeout(() => setSaveStatus(''), 2000);
-      setSaves(await loadSaves());
-    }
-    setShowSaveDialog(false);
-    setNewSaveName('');
+    if (result) { setActiveSaveId(result.id); setActiveSaveName(name); setSaveStatus('Saved!'); setTimeout(()=>setSaveStatus(''),2000); setSaves(await loadSaves()); }
+    setShowSaveDialog(false); setNewSaveName('');
   };
-
   const handleLoad = async (id) => {
-    const loadedData = await loadState(id);
-    if (loadedData) {
-      setState({ ...defaults, ...loadedData });
-      const s = saves.find(s => s.id === id);
-      if (s && s.name !== '__autosave__') {
-        setActiveSaveId(id);
-        setActiveSaveName(s.name);
-      }
-      setSaveStatus('Loaded');
-      setTimeout(() => setSaveStatus(''), 2000);
-    }
+    const data = await loadState(id);
+    if (data) { setState({ ...defaults, ...data }); const s = saves.find(s=>s.id===id); if(s&&s.name!=='__autosave__'){setActiveSaveId(id);setActiveSaveName(s.name);} setSaveStatus('Loaded'); setTimeout(()=>setSaveStatus(''),2000); }
   };
-
   const handleDelete = async (id) => {
-    if (await deleteSave(id)) {
-      if (activeSaveId === id) { setActiveSaveId(null); setActiveSaveName(''); }
-      setSaves(await loadSaves());
-    }
+    if (await deleteSave(id)) { if(activeSaveId===id){setActiveSaveId(null);setActiveSaveName('');} setSaves(await loadSaves()); }
   };
 
   const set = useCallback((key, val) => setState(prev => ({ ...prev, [key]: val })), []);
-  const setPartnerCount = useCallback((idx, val) => setState(prev => {
-    const next = [...prev.partnerCounts]; next[idx] = val; return { ...prev, partnerCounts: next };
-  }), []);
-  const setTierFee = useCallback((idx, val) => setState(prev => {
-    const next = [...prev.tierFees]; next[idx] = val; return { ...prev, tierFees: next };
-  }), []);
-  const resetFees = useCallback(() => { setState(prev => ({ ...prev, tierFees: TIERS.map(t => t.fee) })); setEditTierFees(false); }, []);
+  const setPartnerCount = useCallback((idx, val) => setState(prev => { const next=[...prev.partnerCounts]; next[idx]=val; return {...prev,partnerCounts:next}; }), []);
+  const setTierFee = useCallback((idx, val) => setState(prev => { const next=[...prev.tierFees]; next[idx]=val; return {...prev,tierFees:next}; }), []);
+  const resetFees = useCallback(() => { setState(prev => ({...prev, tierFees:TIERS.map(t=>t.fee)})); setEditTierFees(false); }, []);
 
+  // ═══ CORE CALCULATIONS (current model) ═══
   const calc = useMemo(() => {
     const s = state;
     const ct = s.customTiers || [];
     const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
-    const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0) + ct.reduce((a, t) => a + (t.count || 0), 0);
-    const totalInstructors = s.partnerCounts.reduce((sum, c, i) => sum + c * TIERS[i].instructors, 0) + ct.reduce((sum, t) => sum + (t.count || 0) * (t.instructors || 0), 0);
-    const licenseRevenue = s.partnerCounts.reduce((sum, c, i) => sum + c * s.tierFees[i], 0) + ct.reduce((sum, t) => sum + (t.count || 0) * (t.fee || 0), 0);
-    const effectivePartners = totalPartners * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
-    const newLicensedOrgs = s.newIPPInstructors * (s.pctIPPtoLicense / 100);
-    const activeCohortOrgs = effectivePartners * (s.pctLicenseToActive / 100);
+    const totalPartners = s.partnerCounts.reduce((a,b)=>a+b,0) + ct.reduce((a,t)=>a+(t.count||0),0);
+    const totalInstructors = s.partnerCounts.reduce((sum,c,i)=>sum+c*TIERS[i].instructors,0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.instructors||0),0);
+    const licenseRevenue = s.partnerCounts.reduce((sum,c,i)=>sum+c*s.tierFees[i],0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.fee||0),0);
+    const effectivePartners = totalPartners * (s.renewalRate/100) * (1 - s.dormantRate/100);
+    const activeCohortOrgs = effectivePartners * (s.pctLicenseToActive/100);
     const totalCohorts = activeCohortOrgs * s.cohortsPerOrg;
     const totalParticipants = totalCohorts * s.avgParticipants;
     const certsIncluded = totalPartners * 15;
@@ -318,293 +287,182 @@ function App() {
     const ippRevenue = s.newIPPInstructors * s.feeIPP;
     const cohortRevenue = totalCohorts * s.feeCohort;
     const certOverageRev = certOverages * s.feeCertOverage;
-    const grantRevenue = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
+    const grantRevenue = (s.funders||[]).reduce((sum,f)=>sum+(f.amount||0),0);
     const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
     const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
     const cohortCostTotal = totalCohorts * s.costPerCohort;
     const certCostTotal = certsIssued * s.costPerCert;
     const totalCost = fixedTotal + ippCostTotal + cohortCostTotal + certCostTotal;
     const netMargin = totalRevenue - totalCost;
-    const marginPct = totalRevenue > 0 ? netMargin / totalRevenue : -1;
-    const recurringRevenue = licenseRevenue + cohortRevenue;
-    const stabilityScore = totalRevenue > 0 ? recurringRevenue / totalRevenue : 0;
-    const netPerPartner = s.tierFees[0]
-      + TIERS[0].instructors * (s.newIPPInstructors / Math.max(totalPartners, 1)) * s.feeIPP
-      - s.cohortsPerOrg * (s.pctLicenseToActive / 100) * s.feeCohort
-      - s.cohortsPerOrg * (s.pctLicenseToActive / 100) * s.costPerCohort
-      - TIERS[0].instructors * (s.newIPPInstructors / Math.max(totalPartners, 1)) * s.costPerIPP;
-    const breakEvenPartners = netPerPartner > 0 ? Math.ceil(fixedTotal / netPerPartner) : null;
-    const pilotYr1Revenue = (totalPartners - s.pilotPartners) * s.tierFees[0] + s.pilotPartners * s.pilotFee + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
-    const pilotYr1Margin = pilotYr1Revenue - totalCost;
-    const pilotYr2Revenue = (totalPartners - s.pilotPartners) * s.tierFees[0] + s.pilotPartners * (s.pilotConvertPct / 100) * s.pilotFullFee + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
-    const pilotYr2Margin = pilotYr2Revenue - totalCost;
-    const pilotDrag = totalRevenue - pilotYr1Revenue;
-    const consortiumRevenue = s.consortiumFee;
-    const consortiumCost = s.consortiumCohorts * s.costPerCohort;
-    const consortiumMargin = consortiumRevenue - consortiumCost;
-    const equivalentRevenue = s.consortiumPartners * s.tierFees[0];
-    const consortiumSaving = (equivalentRevenue - s.consortiumFee) / s.consortiumPartners;
-    const sponsoredGap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
-    const sponsoredCWPMargin = netMargin - sponsoredGap;
-    const sponsoredFunderMargin = netMargin;
+    const marginPct = totalRevenue > 0 ? netMargin/totalRevenue : -1;
 
-    // COHORT-BASED PRICING MODEL (alternative)
-    const cmSmallCohorts = Math.round(totalCohorts * (s.cohortModelPctSmall / 100));
-    const cmLargeCohorts = Math.round(totalCohorts * (1 - s.cohortModelPctSmall / 100));
-    const cmAnnualRev = totalPartners * s.cohortModelAnnualFee;
-    const cmCohortRev = cmSmallCohorts * s.cohortModelSmallFee + cmLargeCohorts * s.cohortModelLargeFee;
-    const cmCertRev = s.cohortModelCertFee > 0 ? certsIssued * s.cohortModelCertFee : 0;
-    const cmTotalRevenue = cmAnnualRev + cmCohortRev + cmCertRev + ippRevenue + grantRevenue;
-    const cmNetMargin = cmTotalRevenue - totalCost;
-    const cmRevDiff = cmTotalRevenue - totalRevenue;
+    // Model A revenue
+    const maSmall = Math.round(totalCohorts*(s.modelA_pctSmall/100));
+    const maLarge = Math.round(totalCohorts*(1-s.modelA_pctSmall/100));
+    const maAnnualRev = totalPartners * s.modelA_annualFee;
+    const maCohortRev = maSmall * s.modelA_smallCohortFee + maLarge * s.modelA_largeCohortFee;
+    let maTotalRev = maAnnualRev + maCohortRev + ippRevenue + grantRevenue;
+    let maPilotDrag = 0;
+    if (s.modelA_pilotEnabled) {
+      const pp = Math.min(s.modelA_pilotPartners, totalPartners);
+      maPilotDrag = pp * (s.modelA_annualFee - s.modelA_pilotFee) + pp * s.cohortsPerOrg * (s.modelA_largeCohortFee - s.modelA_pilotCohortFee);
+      maTotalRev -= maPilotDrag;
+    }
+    const maNetMargin = maTotalRev - totalCost;
+
+    // Model B revenue
+    const mbPartners = totalPartners;
+    const mbStarter = Math.round(mbPartners * (s.modelB_pctStarter/100));
+    const mbStandard = Math.round(mbPartners * (s.modelB_pctStandard/100));
+    const mbGrowth = mbPartners - mbStarter - mbStandard;
+    const mbRev = mbStarter*s.modelB_starterFee + mbStandard*s.modelB_standardFee + mbGrowth*s.modelB_growthFee;
+    let mbTotalRev = mbRev + ippRevenue + grantRevenue;
+    let mbPilotDrag = 0;
+    if (s.modelB_pilotEnabled) {
+      const pp = Math.min(s.modelB_pilotPartners, totalPartners);
+      const avgPkg = mbTotalRev > 0 ? mbRev / Math.max(mbPartners,1) : s.modelB_starterFee;
+      mbPilotDrag = pp * (avgPkg - s.modelB_pilotFee);
+      mbTotalRev -= mbPilotDrag;
+    }
+    const mbNetMargin = mbTotalRev - totalCost;
 
     return { fixedTotal, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
-      newLicensedOrgs, activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
-      ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue, ippCostTotal, cohortCostTotal, certCostTotal,
-      totalCost, netMargin, marginPct, recurringRevenue, stabilityScore, netPerPartner, breakEvenPartners,
-      pilotYr1Revenue, pilotYr1Margin, pilotYr2Revenue, pilotYr2Margin, pilotDrag,
-      consortiumRevenue, consortiumCost, consortiumMargin, equivalentRevenue, consortiumSaving,
-      sponsoredGap, sponsoredCWPMargin, sponsoredFunderMargin,
-      cmSmallCohorts, cmLargeCohorts, cmAnnualRev, cmCohortRev, cmCertRev, cmTotalRevenue, cmNetMargin, cmRevDiff };
+      activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
+      ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
+      ippCostTotal, cohortCostTotal, certCostTotal, totalCost, netMargin, marginPct,
+      maSmall, maLarge, maAnnualRev, maCohortRev, maTotalRev, maNetMargin, maPilotDrag,
+      mbStarter, mbStandard, mbGrowth, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag };
   }, [state]);
 
-  const sensitivityData = useMemo(() => {
-    const s = state;
-    const data = [];
-    for (let p = 1; p <= 20; p++) {
-      const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
-      const grantTotal = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
-      const licRev = p * s.tierFees[0];
-      const effP = p * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
-      const actOrgs = effP * (s.pctLicenseToActive / 100);
-      const coh = actOrgs * s.cohortsPerOrg;
-      const parts = coh * s.avgParticipants;
-      const overages = Math.max(0, parts - p * 15);
-      const rev = licRev + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + grantTotal;
-      const cost = fixedTotal + s.newIPPInstructors * s.costPerIPP + coh * s.costPerCohort + parts * s.costPerCert;
-      const baseline = rev - cost;
-      let scenario = baseline;
-      if (sensitivityOverlay === 'Pilot') {
-        const pilotRev = (p - s.pilotPartners) * s.tierFees[0] + Math.min(s.pilotPartners, p) * s.pilotFee + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + grantTotal;
-        scenario = pilotRev - cost;
-      } else if (sensitivityOverlay === 'Consortium') {
-        const consRev = s.consortiumFee + Math.max(0, p - s.consortiumPartners) * s.tierFees[0] + s.newIPPInstructors * s.feeIPP + coh * s.feeCohort + overages * s.feeCertOverage + grantTotal;
-        scenario = consRev - cost;
-      } else if (sensitivityOverlay === 'Sponsored') {
-        scenario = baseline - (s.sponsoredListPrice - s.sponsoredFee) * Math.min(s.sponsoredPartners, p);
-      } else if (sensitivityOverlay === 'Cohort-Based') {
-        const cmSmall = Math.round(coh * (s.cohortModelPctSmall / 100));
-        const cmLarge = Math.round(coh * (1 - s.cohortModelPctSmall / 100));
-        const cmRev = p * s.cohortModelAnnualFee + cmSmall * s.cohortModelSmallFee + cmLarge * s.cohortModelLargeFee
-          + (s.cohortModelCertFee > 0 ? parts * s.cohortModelCertFee : 0) + s.newIPPInstructors * s.feeIPP + grantTotal;
-        scenario = cmRev - cost;
-      }
-      let lens = null;
-      if (sensitivityLens) { lens = licRev + coh * 500 + overages * s.feeCertOverage - cost; }
-      const entry = { partners: p, Baseline: baseline };
-      if (sensitivityOverlay !== 'None') entry[sensitivityOverlay] = scenario;
-      if (sensitivityLens) entry['Membership-Stable'] = lens;
-      data.push(entry);
-    }
-    return data;
-  }, [state, sensitivityOverlay, sensitivityLens]);
-
-  // ═══ 5-YEAR FORECAST ENGINE ═══
+  // ═══ 5-YEAR FORECAST ═══
   const forecast = useMemo(() => {
     const s = state;
-    const years = [];
-    const startPartners = s.partnerCounts.reduce((a,b) => a+b, 0);
-    const ippFees = [s.feeIPP, s.ippFeeYr2, s.ippFeeYr3, s.ippFeeYr4, s.ippFeeYr5];
-    let cumRevenue = 0, cumCost = 0, cumMargin = 0;
-    let breakEvenYear = null;
+    const startPartners = calc.totalPartners;
+    const grantBase = (s.funders||[]).reduce((sum,f)=>sum+(f.amount||0),0);
+    let cumRevenue=0, cumCost=0, cumMargin=0;
+    let breakEvenYear=null;
+    const years=[];
 
-    for (let yr = 0; yr < 5; yr++) {
-      const feeEsc = Math.pow(1 + s.feeEscalation / 100, yr);
-      const cohortFeeEsc = Math.pow(1 + s.cohortFeeEscalation / 100, yr);
-      const costInf = Math.pow(1 + s.costInflation / 100, yr);
-      const varCostInf = Math.pow(1 + s.variableCostInflation / 100, yr);
-      const pipeGrow = Math.pow(1 + s.pipelineGrowth / 100, yr);
-      const grantGrow = Math.pow(1 + s.grantGrowthRate / 100, yr);
-
-      // Partner base roll-forward
-      let partners;
-      if (yr === 0) {
-        partners = startPartners;
-      } else {
-        const prev = years[yr - 1];
-        const retained = Math.round(prev.partners * (s.renewalRate / 100));
-        const newFromPipeline = Math.round(prev.newIPP * (s.pctIPPtoLicense / 100));
-        partners = retained + newFromPipeline;
-      }
-
-      const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
-      const currentIPPFee = ippFees[yr] || ippFees[ippFees.length - 1];
-
-      // Revenue
-      const licRev = s.partnerCounts.reduce((sum, c, i) => {
-        const tierShare = startPartners > 0 ? c / startPartners : (i === 0 ? 1 : 0);
-        return sum + Math.round(partners * tierShare) * s.tierFees[i] * feeEsc;
-      }, 0);
-      const ippRev = newIPP * currentIPPFee;
-      const effPartners = partners * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
-      const actOrgs = effPartners * (s.pctLicenseToActive / 100);
-      const cohorts = actOrgs * s.cohortsPerOrg;
-      const cohortFee = s.feeCohort * cohortFeeEsc;
-      const cohRev = cohorts * cohortFee;
-      const participants = cohorts * s.avgParticipants;
-      const certsIncl = partners * 15;
-      const overages = Math.max(0, participants - certsIncl);
-      const certRev = overages * s.feeCertOverage;
-      const grantBase = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
-      const grantRev = grantBase * grantGrow;
-
-      let totalRev = licRev + ippRev + cohRev + certRev + grantRev;
-
-      // Scenario adjustments
-      if (s.forecastScenario === 'pilot' && yr < s.pilotDuration) {
-        const pilotCount = Math.min(s.pilotPartners, partners);
-        const discount = pilotCount * (s.tierFees[0] * feeEsc - s.pilotFee);
-        totalRev -= discount;
-      } else if (s.forecastScenario === 'pilot' && yr === s.pilotDuration) {
-        const converted = Math.round(s.pilotPartners * (s.pilotConvertPct / 100));
-        const lost = s.pilotPartners - converted;
-        totalRev -= lost * s.tierFees[0] * feeEsc;
-      }
-      if (s.forecastScenario === 'consortium') {
-        const consPartners = Math.min(s.consortiumPartners, partners);
-        const indivRev = consPartners * s.tierFees[0] * feeEsc;
-        const consRev = s.consortiumFee * feeEsc;
-        totalRev -= (indivRev - consRev);
-      }
-      if (s.forecastScenario === 'sponsored') {
-        const gap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
-        totalRev -= gap;
-      }
-      if (s.forecastScenario === 'cohort-model') {
-        const cmEsc = Math.pow(1 + s.cohortModelEscalation / 100, yr);
-        const cmSmall = Math.round(cohorts * (s.cohortModelPctSmall / 100));
-        const cmLarge = Math.round(cohorts * (1 - s.cohortModelPctSmall / 100));
-        const cmAnnual = partners * s.cohortModelAnnualFee * cmEsc;
-        const cmCohort = cmSmall * s.cohortModelSmallFee * cmEsc + cmLarge * s.cohortModelLargeFee * cmEsc;
-        const cmCert = s.cohortModelCertFee > 0 ? participants * s.cohortModelCertFee : 0;
-        totalRev = cmAnnual + cmCohort + cmCert + ippRev + grantRev;
-      }
-
-      // Costs — staff gets its own raise rate, others get general inflation
-      const staffInf = Math.pow(1 + s.staffRaiseRate / 100, yr);
+    for (let yr=0; yr<5; yr++) {
+      const feeEsc = Math.pow(1+s.feeEscalation/100, yr);
+      const costInf = Math.pow(1+s.costInflation/100, yr);
+      const varCostInf = Math.pow(1+s.variableCostInflation/100, yr);
+      const staffInf = Math.pow(1+s.staffRaiseRate/100, yr);
+      const pipeGrow = Math.pow(1+s.pipelineGrowth/100, yr);
+      const grantGrow = Math.pow(1+s.grantGrowthRate/100, yr);
       const calendarYear = s.forecastStartYear + yr;
-      const isReaccredYear = calendarYear === s.reaccredYear;
-      const accredCost = s.costAccreditation * costInf + (isReaccredYear ? s.reaccredCost : 0);
-      const fixedTotal = s.costStaff * staffInf + s.costLMS * costInf + accredCost + s.costSystems*costInf;
-      const ippCost = newIPP * s.costPerIPP * varCostInf;
-      const cohortCost = cohorts * s.costPerCohort * varCostInf;
-      const certCost = participants * s.costPerCert * varCostInf;
-      const totalCost = fixedTotal + ippCost + cohortCost + certCost;
+      const isReaccred = calendarYear === s.reaccredYear;
 
-      const netMargin = totalRev - totalCost;
-      cumRevenue += totalRev;
-      cumCost += totalCost;
-      cumMargin += netMargin;
+      let partners;
+      if (yr===0) partners=startPartners;
+      else { const prev=years[yr-1]; partners=Math.round(prev.partners*(s.renewalRate/100))+Math.round(prev.newIPP*(s.pctIPPtoLicense/100)); }
+      const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
+      const effP = partners*(s.renewalRate/100)*(1-s.dormantRate/100);
+      const actOrgs = effP*(s.pctLicenseToActive/100);
+      const cohorts = actOrgs*s.cohortsPerOrg;
+      const participants = cohorts*s.avgParticipants;
+      const grantRev = grantBase*grantGrow;
+      const ippRev = newIPP*s.feeIPP;
 
-      if (breakEvenYear === null && cumMargin > 0) breakEvenYear = yr + 1;
+      // Current model revenue
+      const licRev = s.partnerCounts.reduce((sum,c,i)=>{
+        const share=startPartners>0?c/startPartners:(i===0?1:0);
+        return sum+Math.round(partners*share)*s.tierFees[i]*feeEsc;
+      },0);
+      const cohRev = cohorts*s.feeCohort*feeEsc;
+      const overages = Math.max(0, participants - partners*15);
+      const certRev = overages*s.feeCertOverage;
+      const currentRev = licRev+ippRev+cohRev+certRev+grantRev;
 
-      years.push({
-        year: yr + 1,
-        calendarYear,
-        label: calendarYear.toString(),
-        partners,
-        newIPP,
-        licenseRevenue: licRev,
-        ippRevenue: ippRev,
-        cohortRevenue: cohRev,
-        certRevenue: certRev,
-        grantRevenue: grantRev,
-        totalRevenue: totalRev,
-        fixedCost: fixedTotal,
-        variableCost: ippCost + cohortCost + certCost,
-        reaccredSpike: isReaccredYear ? s.reaccredCost : 0,
-        totalCost,
-        netMargin,
-        marginPct: totalRev > 0 ? netMargin / totalRev : 0,
-        cumRevenue,
-        cumCost,
-        cumMargin,
-      });
+      // Model A revenue
+      const maSmall=Math.round(cohorts*(s.modelA_pctSmall/100));
+      const maLarge=Math.round(cohorts*(1-s.modelA_pctSmall/100));
+      let maRev = partners*s.modelA_annualFee*feeEsc + maSmall*s.modelA_smallCohortFee*feeEsc + maLarge*s.modelA_largeCohortFee*feeEsc + ippRev + grantRev;
+      if (s.modelA_pilotEnabled && yr < s.modelA_pilotDuration) {
+        const pp=Math.min(s.modelA_pilotPartners,partners);
+        maRev -= pp*(s.modelA_annualFee*feeEsc-s.modelA_pilotFee) + pp*s.cohortsPerOrg*(s.modelA_largeCohortFee*feeEsc-s.modelA_pilotCohortFee);
+      }
+
+      // Model B revenue
+      const mbSt=Math.round(partners*(s.modelB_pctStarter/100));
+      const mbSd=Math.round(partners*(s.modelB_pctStandard/100));
+      const mbGr=partners-mbSt-mbSd;
+      let mbRev = (mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)*feeEsc + ippRev + grantRev;
+      if (s.modelB_pilotEnabled && yr < s.modelB_pilotDuration) {
+        const pp=Math.min(s.modelB_pilotPartners,partners);
+        const avgPkg=(mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)/Math.max(partners,1);
+        mbRev -= pp*(avgPkg*feeEsc-s.modelB_pilotFee);
+      }
+
+      // Costs (same for all models)
+      const accredCost = s.costAccreditation*costInf + (isReaccred?s.reaccredCost:0);
+      const fixedTotal = s.costStaff*staffInf + s.costLMS*costInf + accredCost + s.costSystems*costInf;
+      const ippCost = newIPP*s.costPerIPP*varCostInf;
+      const cohortCost = cohorts*s.costPerCohort*varCostInf;
+      const certCost = participants*s.costPerCert*varCostInf;
+      const totalCost = fixedTotal+ippCost+cohortCost+certCost;
+
+      const chosenRev = s.forecastModel==='a'?maRev : s.forecastModel==='b'?mbRev : currentRev;
+      const netMargin = chosenRev - totalCost;
+      cumRevenue+=chosenRev; cumCost+=totalCost; cumMargin+=netMargin;
+      if (breakEvenYear===null && cumMargin>0) breakEvenYear=yr+1;
+
+      years.push({ year:yr+1, calendarYear, label:calendarYear.toString(), partners, newIPP,
+        currentRev, maRev, mbRev, totalCost, fixedCost:fixedTotal, variableCost:ippCost+cohortCost+certCost,
+        reaccredSpike:isReaccred?s.reaccredCost:0,
+        chosenRev, netMargin, marginPct:chosenRev>0?netMargin/chosenRev:0, cumRevenue, cumCost, cumMargin });
     }
-
     return { years, breakEvenYear };
-  }, [state]);
+  }, [state, calc]);
 
   return (
     <div style={{ minHeight:'100vh', background:GRAY100, fontFamily:"'Inter',sans-serif" }}>
+      {/* HEADER */}
       <div style={{ background:'white', borderBottom:'1.5px solid '+GRAY200, padding:'16px 24px' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
           <div>
             <h1 style={{ fontSize:20, fontWeight:700, color:GRAY900, margin:0 }}>CWC Fee Strategy Model</h1>
             <p style={{ fontSize:12, color:GRAY500, margin:'2px 0 0' }}>
-              Internal planning tool — model pricing, costs, and revenue scenarios
+              Model pricing changes and forecast their impact
               {activeSaveName && <span style={{ color:BLUE, fontWeight:600 }}> — {activeSaveName}</span>}
               {saveStatus && <span style={{ color:GREEN, marginLeft:8 }}>{saveStatus}</span>}
             </p>
           </div>
           <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-            {/* Save As (named snapshot) */}
-            <button onClick={() => setShowSaveDialog(true)}
-              style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+BLUE, background:BLUE, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-              Save Snapshot
-            </button>
-            {/* Load dropdown — only show named saves, not autosave */}
-            {saves.filter(s => s.name !== '__autosave__').length > 0 && (
-              <select onChange={e => { if (e.target.value) handleLoad(e.target.value); e.target.value = ''; }}
-                defaultValue="" style={{ padding:'6px 8px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:6, color:GRAY700, fontFamily:"'Inter',sans-serif" }}>
+            <button onClick={()=>setShowSaveDialog(true)} style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+BLUE, background:BLUE, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Save Snapshot</button>
+            {saves.filter(s=>s.name!=='__autosave__').length>0 && (
+              <select onChange={e=>{if(e.target.value)handleLoad(e.target.value);e.target.value='';}} defaultValue="" style={{ padding:'6px 8px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:6, color:GRAY700, fontFamily:"'Inter',sans-serif" }}>
                 <option value="" disabled>Load snapshot...</option>
-                {saves.filter(s => s.name !== '__autosave__').map(s => <option key={s.id} value={s.id}>{s.name} — {new Date(s.updated_at).toLocaleDateString()}</option>)}
+                {saves.filter(s=>s.name!=='__autosave__').map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             )}
-            {/* Delete active snapshot */}
-            {activeSaveId && (
-              <button onClick={() => { if (confirm('Delete "'+activeSaveName+'"?')) handleDelete(activeSaveId); }}
-                style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+RED, background:'white', color:RED, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-                Delete
-              </button>
-            )}
-            {/* Reset to defaults */}
-            <button onClick={() => { setState({...defaults}); setActiveSaveId(null); setActiveSaveName(''); }}
-              style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-              Reset
-            </button>
+            {activeSaveId && <button onClick={()=>{if(confirm('Delete "'+activeSaveName+'"?'))handleDelete(activeSaveId);}} style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+RED, background:'white', color:RED, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Delete</button>}
+            <button onClick={()=>{setState({...defaults});setActiveSaveId(null);setActiveSaveName('');}} style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Reset</button>
           </div>
         </div>
-        {/* Save As dialog */}
         {showSaveDialog && (
           <div style={{ marginTop:12, display:'flex', gap:8, alignItems:'center' }}>
-            <input type="text" placeholder="Name this save..." value={newSaveName} onChange={e => setNewSaveName(e.target.value)}
-              onKeyDown={e => { if (e.key==='Enter') handleSaveNew(); }}
-              style={{ flex:1, maxWidth:300, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" }}
-              autoFocus />
-            <button onClick={handleSaveNew}
-              style={{ padding:'6px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'none', background:GREEN, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-              Save
-            </button>
-            <button onClick={() => { setShowSaveDialog(false); setNewSaveName(''); }}
-              style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-              Cancel
-            </button>
+            <input type="text" placeholder="Name this save..." value={newSaveName} onChange={e=>setNewSaveName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSaveNew();}}
+              style={{ flex:1, maxWidth:300, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" }} autoFocus />
+            <button onClick={handleSaveNew} style={{ padding:'6px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'none', background:GREEN, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Save</button>
+            <button onClick={()=>{setShowSaveDialog(false);setNewSaveName('');}} style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Cancel</button>
           </div>
         )}
       </div>
 
+      {/* STAT CARDS */}
       <div style={{ display:'flex', gap:12, padding:'16px 24px', flexWrap:'wrap', position:'sticky', top:0, zIndex:10, background:GRAY100 }}>
-        <StatCard label="Total Revenue" value={fmt(calc.totalRevenue)} sub={[calc.licenseRevenue,calc.ippRevenue,calc.cohortRevenue,calc.certOverageRev,calc.grantRevenue].filter(v=>v>0).length+' revenue sources'} color={BLUE} />
-        <StatCard label="Total Cost" value={fmt(calc.totalCost)} sub={'Fixed '+fmt(calc.fixedTotal)+' + Variable '+fmt(calc.totalCost-calc.fixedTotal)} color={RED} />
-        <StatCard label="Net Margin" value={fmt(calc.netMargin)} sub={pct(calc.marginPct)+' margin'} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
-        <StatCard label="Break-Even" value={calc.breakEvenPartners!=null?calc.breakEvenPartners+' partners':'N/A'} sub={calc.breakEvenPartners!=null?'1-instructor tier baseline':'N/A \u2014 check pricing'} color={calc.breakEvenPartners!=null?PURPLE:RED} />
-        <StatCard label="Stability Score" value={pct(calc.stabilityScore)} sub="recurring / total revenue" color={TEAL} />
+        <StatCard label="Current Revenue" value={fmt(calc.totalRevenue)} sub={calc.totalPartners+' partners'} color={BLUE} />
+        <StatCard label="Model A Revenue" value={fmt(calc.maTotalRev)} sub={'Per-cohort'+(state.modelA_pilotEnabled?' + pilot':'')} color={TEAL} />
+        <StatCard label="Model B Revenue" value={fmt(calc.mbTotalRev)} sub={'Packages'+(state.modelB_pilotEnabled?' + pilot':'')} color={PURPLE} />
+        <StatCard label="Costs" value={fmt(calc.totalCost)} color={RED} />
+        <StatCard label="Current Margin" value={fmt(calc.netMargin)} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
       </div>
 
+      {/* TAB BAR */}
       <div style={{ display:'flex', gap:0, background:'white', borderBottom:'1.5px solid '+GRAY200, padding:'0 24px', overflowX:'auto' }}>
         {TABS.map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{
+          <button key={tab} onClick={()=>setActiveTab(tab)} style={{
             padding:'12px 18px', fontSize:13, fontWeight:600, color:activeTab===tab?BLUE:GRAY500,
             background:'none', border:'none', borderBottom:activeTab===tab?'2.5px solid '+BLUE:'2.5px solid transparent',
             cursor:'pointer', whiteSpace:'nowrap', fontFamily:"'Inter',sans-serif" }}>{tab}</button>
@@ -612,128 +470,161 @@ function App() {
       </div>
 
       <div style={{ padding:'20px 24px', maxWidth:1200, margin:'0 auto' }}>
-        {activeTab==='Scenarios' && <ScenariosTab state={state} calc={calc} set={set} scenarioMode={scenarioMode} setScenarioMode={setScenarioMode} />}
-        {activeTab==='Overview' && <OverviewTab state={state} calc={calc} bothWorldsLens={bothWorldsLens} setBothWorldsLens={setBothWorldsLens} />}
-        {activeTab==='Partners & Growth' && <PartnersGrowthTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
-        {activeTab==='Costs' && <CostsTab state={state} calc={calc} set={set} />}
-        {activeTab==='Sensitivity' && <SensitivityTab data={sensitivityData} overlay={sensitivityOverlay} setOverlay={setSensitivityOverlay} lens={sensitivityLens} setLens={setSensitivityLens} />}
-        {activeTab==='Forecast' && <ForecastTab state={state} calc={calc} forecast={forecast} set={set} />}
+        {activeTab==='Current State' && <CurrentStateTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
+        {activeTab==='What If' && <WhatIfTab state={state} calc={calc} set={set} whatIfModel={whatIfModel} setWhatIfModel={setWhatIfModel} />}
+        {activeTab==='5-Year Outlook' && <OutlookTab state={state} calc={calc} forecast={forecast} set={set} />}
       </div>
 
       <div style={{ textAlign:'center', padding:'24px 0', fontSize:11, color:GRAY400 }}>
-        CWC Fee Strategy Model {'\u00B7'} 2025 License Rates {'\u00B7'} Internal Use Only
+        CWC Fee Strategy Model {'\u00B7'} Internal Use Only
       </div>
     </div>
   );
 }
 
-// ═══ SCENARIOS TAB ═══
-function ScenariosTab({ state, calc, set, scenarioMode, setScenarioMode }) {
-  const modes = [{key:'cohort-model',label:'Cohort-Based Pricing'},{key:'pilot',label:'Pilot License'},{key:'consortium',label:'Consortium'},{key:'sponsored',label:'Sponsored'}];
+// ═══ CURRENT STATE TAB ═══
+function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTierFees, setEditTierFees, resetFees }) {
   return (
     <div>
-      <div style={{ display:'flex', gap:0, background:GRAY100, borderRadius:8, padding:3, marginBottom:20, border:'1px solid '+GRAY200, flexWrap:'wrap' }}>
-        {modes.map(m => (
-          <button key={m.key} onClick={() => setScenarioMode(m.key)} style={{
-            flex:'1 1 auto', padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer',
-            background:scenarioMode===m.key?'white':'transparent', color:scenarioMode===m.key?PURPLE:GRAY500,
-            boxShadow:scenarioMode===m.key?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif"
-          }}>{m.label}</button>
-        ))}
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Your actual numbers today — partners, costs, and revenue under the current pricing model.</div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        {/* LEFT: Partners + Pipeline */}
+        <div>
+          <Card style={{ marginBottom:16 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Partner Base</div>
+              <div style={{ display:'flex', gap:6 }}>
+                <button onClick={()=>setEditTierFees(!editTierFees)} style={{ padding:'4px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:editTierFees?BLUE:'white', color:editTierFees?'white':GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>{editTierFees?'Done':'Edit Fees'}</button>
+                <button onClick={resetFees} style={{ padding:'4px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Reset</button>
+              </div>
+            </div>
+            {TIERS.map((tier,i) => (
+              <div key={i} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'6px 10px', background:GRAY50, borderRadius:6, fontSize:13 }}>
+                <span style={{ width:110, fontWeight:600, color:GRAY700 }}>{tier.label}</span>
+                {editTierFees && <input type="number" value={state.tierFees[i]} onChange={e=>setTierFee(i,Number(e.target.value))} style={{ width:80, padding:'3px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />}
+                {!editTierFees && <span style={{ width:80, fontSize:12, color:GRAY500 }}>{fmt(state.tierFees[i])}</span>}
+                <input type="number" min={0} value={state.partnerCounts[i]} onChange={e=>setPartnerCount(i,Math.max(0,Number(e.target.value)||0))}
+                  style={{ width:55, padding:'3px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, textAlign:'center', color:BLUE }} />
+                <span style={{ fontSize:12, color:GRAY500, flex:1, textAlign:'right' }}>{fmt(state.partnerCounts[i]*state.tierFees[i])}</span>
+              </div>
+            ))}
+            {(state.customTiers||[]).map((ct,i) => (
+              <div key={'ct'+i} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'6px 10px', background:'#faf5ff', borderRadius:6, fontSize:13, border:'1px solid '+PURPLE+'22' }}>
+                <input type="text" value={ct.label} placeholder="Name" onChange={e=>{const next=[...state.customTiers];next[i]={...next[i],label:e.target.value};set('customTiers',next);}} style={{ width:90, padding:'3px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12 }} />
+                <input type="number" value={ct.fee} onChange={e=>{const next=[...state.customTiers];next[i]={...next[i],fee:Number(e.target.value)};set('customTiers',next);}} style={{ width:70, padding:'3px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />
+                <input type="number" min={0} value={ct.count||0} onChange={e=>{const next=[...state.customTiers];next[i]={...next[i],count:Math.max(0,Number(e.target.value)||0)};set('customTiers',next);}} style={{ width:55, padding:'3px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, textAlign:'center', color:PURPLE }} />
+                <span style={{ fontSize:12, color:GRAY500, flex:1, textAlign:'right' }}>{fmt((ct.count||0)*ct.fee)}</span>
+                <button onClick={()=>{const next=[...state.customTiers];next.splice(i,1);set('customTiers',next);}} style={{ padding:'2px 6px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:4, background:'white', color:RED, cursor:'pointer' }}>{'\u00D7'}</button>
+              </div>
+            ))}
+            <button onClick={()=>set('customTiers',[...(state.customTiers||[]),{label:'',instructors:1,fee:0,count:0}])} style={{ padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+PURPLE+'44', background:'#faf5ff', color:PURPLE, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>+ Custom Rate</button>
+            <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200 }}>
+              <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Partners</div><div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{calc.totalPartners}</div></div>
+              <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>License Rev</div><div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.licenseRevenue)}</div></div>
+              <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Margin</div><div style={{ fontSize:18, fontWeight:700, color:calc.netMargin>=0?GREEN:RED }}>{fmt(calc.netMargin)}</div></div>
+            </div>
+          </Card>
+          <Card>
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+              <InputField label="New IPP instructors/yr" value={state.newIPPInstructors} min={0} max={50} onChange={v=>set('newIPPInstructors',v)} />
+              <InputField label="IPP fee" value={state.feeIPP} min={0} max={10000} step={100} onChange={v=>set('feeIPP',v)} prefix="$" />
+              <InputField label="% IPP to licensed" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
+              <InputField label="% running cohorts" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
+              <InputField label="Cohorts per org/yr" value={state.cohortsPerOrg} min={1} max={10} onChange={v=>set('cohortsPerOrg',v)} />
+              <InputField label="Avg participants" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
+              <InputField label="Renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
+              <InputField label="Dormant rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" />
+            </div>
+          </Card>
+        </div>
+
+        {/* RIGHT: Costs + Funders */}
+        <div>
+          <Card style={{ marginBottom:16 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Costs</div>
+            <SectionDivider label="Fixed (Annual)" />
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+              <InputField label="Staff" value={state.costStaff} min={0} max={200000} step={500} onChange={v=>set('costStaff',v)} prefix="$" />
+              <InputField label="LMS" value={state.costLMS} min={0} max={10000} step={50} onChange={v=>set('costLMS',v)} prefix="$" />
+              <InputField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={15000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
+              <InputField label="Airtable + Systems" value={state.costSystems} min={0} max={5000} step={50} onChange={v=>set('costSystems',v)} prefix="$" />
+            </div>
+            <div style={{ fontSize:13, fontWeight:700, textAlign:'right', marginTop:4 }}>Fixed: {fmt(calc.fixedTotal)}</div>
+            <SectionDivider label="Per-Event" />
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px' }}>
+              <InputField label="Per IPP" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" />
+              <InputField label="Per Cohort" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" />
+              <InputField label="Per Cert" value={state.costPerCert} min={0} max={100} onChange={v=>set('costPerCert',v)} prefix="$" />
+            </div>
+            <SectionDivider label="Revenue Fees" />
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+              <InputField label="Cohort fee" value={state.feeCohort} min={0} max={5000} step={25} onChange={v=>set('feeCohort',v)} prefix="$" />
+              <InputField label="Cert overage fee" value={state.feeCertOverage} min={0} max={500} step={5} onChange={v=>set('feeCertOverage',v)} prefix="$" />
+            </div>
+          </Card>
+          <Card>
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Funders & Grants</div>
+            {(state.funders||[]).map((f,i) => (
+              <div key={i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+                <input type="text" value={f.name} placeholder="Funder" onChange={e=>{const next=[...state.funders];next[i]={...next[i],name:e.target.value};set('funders',next);}} style={{ flex:1, padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
+                <input type="number" value={f.amount} onChange={e=>{const next=[...state.funders];next[i]={...next[i],amount:Number(e.target.value)};set('funders',next);}} style={{ width:100, padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right' }} />
+                <button onClick={()=>{const next=[...state.funders];next.splice(i,1);set('funders',next);}} style={{ padding:'3px 7px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' }}>{'\u00D7'}</button>
+              </div>
+            ))}
+            <button onClick={()=>set('funders',[...(state.funders||[]),{name:'',amount:0}])} style={{ padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' }}>+ Add Funder</button>
+            {(state.funders||[]).length>0 && <div style={{ fontSize:13, fontWeight:700, color:GREEN, textAlign:'right', marginTop:8 }}>Total: {fmt((state.funders||[]).reduce((s,f)=>s+(f.amount||0),0))}</div>}
+          </Card>
+        </div>
       </div>
-      {scenarioMode==='cohort-model' && <CohortModelPanel state={state} calc={calc} set={set} />}
-      {scenarioMode==='pilot' && <PilotPanel state={state} calc={calc} set={set} />}
-      {scenarioMode==='consortium' && <ConsortiumPanel state={state} calc={calc} set={set} />}
-      {scenarioMode==='sponsored' && <SponsoredPanel state={state} calc={calc} set={set} />}
     </div>
   );
 }
 
-function CohortModelPanel({ state, calc, set }) {
+// ═══ WHAT IF TAB ═══
+function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
   const s = state;
   const c = calc;
 
-  // Build comparison data for chart
+  // Comparison chart data
   const compData = useMemo(() => {
     const arr = [];
-    for (let p = 1; p <= 20; p++) {
-      const effP = p * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
-      const actOrgs = effP * (s.pctLicenseToActive / 100);
-      const coh = actOrgs * s.cohortsPerOrg;
-      const parts = coh * s.avgParticipants;
-
-      // Current model
-      const currLicRev = p * s.tierFees[0];
-      const currCohRev = coh * s.feeCohort;
-      const currCertRev = Math.max(0, parts - p * 15) * s.feeCertOverage;
-      const currTotal = currLicRev + currCohRev + currCertRev;
-
-      // Cohort model
-      const smCoh = Math.round(coh * (s.cohortModelPctSmall / 100));
-      const lgCoh = Math.round(coh * (1 - s.cohortModelPctSmall / 100));
-      const cmAnnual = p * s.cohortModelAnnualFee;
-      const cmCohort = smCoh * s.cohortModelSmallFee + lgCoh * s.cohortModelLargeFee;
-      const cmCert = s.cohortModelCertFee > 0 ? parts * s.cohortModelCertFee : 0;
-      const cmTotal = cmAnnual + cmCohort + cmCert;
-
-      arr.push({ partners: p, 'Current Model': Math.round(currTotal), 'Cohort Model': Math.round(cmTotal) });
+    for (let p=1; p<=25; p++) {
+      const effP = p*(s.renewalRate/100)*(1-s.dormantRate/100);
+      const actOrgs = effP*(s.pctLicenseToActive/100);
+      const coh = actOrgs*s.cohortsPerOrg;
+      const parts = coh*s.avgParticipants;
+      // Current
+      const currRev = p*s.tierFees[0] + coh*s.feeCohort + Math.max(0,parts-p*15)*s.feeCertOverage;
+      // Model A
+      const maSmall=Math.round(coh*(s.modelA_pctSmall/100)), maLarge=Math.round(coh*(1-s.modelA_pctSmall/100));
+      const maRev = p*s.modelA_annualFee + maSmall*s.modelA_smallCohortFee + maLarge*s.modelA_largeCohortFee;
+      // Model B
+      const mbSt=Math.round(p*(s.modelB_pctStarter/100)), mbSd=Math.round(p*(s.modelB_pctStandard/100)), mbGr=p-mbSt-mbSd;
+      const mbRev = mbSt*s.modelB_starterFee + mbSd*s.modelB_standardFee + mbGr*s.modelB_growthFee;
+      arr.push({ partners:p, Current:Math.round(currRev), 'Model A':Math.round(maRev), 'Model B':Math.round(mbRev) });
     }
     return arr;
   }, [state]);
 
   return (
     <div>
-      <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
-        Cohort-Based Pricing Model
-        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>What if annual fees are based on cohort volume instead of instructor count?</div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Design a new pricing structure. Compare against the current instructor-tier model side by side.</div>
+
+      {/* Model selector */}
+      <div style={{ display:'flex', gap:0, background:GRAY100, borderRadius:8, padding:3, marginBottom:20, border:'1px solid '+GRAY200 }}>
+        <button onClick={()=>setWhatIfModel('a')} style={{ flex:1, padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer', background:whatIfModel==='a'?'white':'transparent', color:whatIfModel==='a'?TEAL:GRAY500, boxShadow:whatIfModel==='a'?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif" }}>Model A: Per-Cohort</button>
+        <button onClick={()=>setWhatIfModel('b')} style={{ flex:1, padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer', background:whatIfModel==='b'?'white':'transparent', color:whatIfModel==='b'?PURPLE:GRAY500, boxShadow:whatIfModel==='b'?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif" }}>Model B: Cohort Packages</button>
       </div>
-      <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
-        <SectionDivider label="Cohort Model Pricing" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-          <SliderField label="Annual partner fee (flat)" value={s.cohortModelAnnualFee} min={0} max={15000} step={100} onChange={v=>set('cohortModelAnnualFee',v)} prefix="$" note="Per partner, replaces instructor-based license" />
-          <SliderField label="Small cohort threshold" value={s.cohortModelThreshold} min={2} max={15} onChange={v=>set('cohortModelThreshold',v)} note="Participants below this = small cohort" />
-          <SliderField label="Small cohort fee (< {s.cohortModelThreshold} participants)" value={s.cohortModelSmallFee} min={0} max={3000} step={25} onChange={v=>set('cohortModelSmallFee',v)} prefix="$" />
-          <SliderField label="Large cohort fee ({s.cohortModelThreshold}+ participants)" value={s.cohortModelLargeFee} min={0} max={3000} step={25} onChange={v=>set('cohortModelLargeFee',v)} prefix="$" />
-          <SliderField label="% of cohorts that are small" value={s.cohortModelPctSmall} min={0} max={100} onChange={v=>set('cohortModelPctSmall',v)} unit="%" />
-          <SliderField label="Per-certificate fee" value={s.cohortModelCertFee} min={0} max={100} step={5} onChange={v=>set('cohortModelCertFee',v)} prefix="$" note="0 = included in cohort fee" />
-        </div>
 
-        <SectionDivider label="Side-by-Side Comparison" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:BLUE, marginBottom:10 }}>Current Model (Instructor Tiers)</div>
-            <div style={{ fontSize:12, marginBottom:4 }}>License Revenue: <strong>{fmt(c.licenseRevenue)}</strong></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>Cohort Fees: <strong>{fmt(c.cohortRevenue)}</strong></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>Cert Overage: <strong>{fmt(c.certOverageRev)}</strong></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
-            <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:8, marginTop:8 }}>
-              <div style={{ fontSize:14, fontWeight:700, color:BLUE }}>Total: {fmt(c.totalRevenue)}</div>
-              <div style={{ fontSize:13, fontWeight:700, color:c.netMargin>=0?GREEN:RED }}>Margin: {fmt(c.netMargin)}</div>
-            </div>
-          </Card>
-          <Card style={{ background:'#faf5ff' }}>
-            <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:10 }}>Cohort-Based Model</div>
-            <div style={{ fontSize:12, marginBottom:4 }}>Annual Partner Fees: <strong>{fmt(c.cmAnnualRev)}</strong>
-              <span style={{ color:GRAY500 }}> ({c.totalPartners} x {fmt(s.cohortModelAnnualFee)})</span></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>Small Cohort Fees: <strong>{fmt(c.cmSmallCohorts * s.cohortModelSmallFee)}</strong>
-              <span style={{ color:GRAY500 }}> ({c.cmSmallCohorts} x {fmt(s.cohortModelSmallFee)})</span></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>Large Cohort Fees: <strong>{fmt(c.cmLargeCohorts * s.cohortModelLargeFee)}</strong>
-              <span style={{ color:GRAY500 }}> ({c.cmLargeCohorts} x {fmt(s.cohortModelLargeFee)})</span></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>Cert Fees: <strong>{fmt(c.cmCertRev)}</strong></div>
-            <div style={{ fontSize:12, marginBottom:4 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
-            <div style={{ borderTop:'1px solid '+PURPLE+'33', paddingTop:8, marginTop:8 }}>
-              <div style={{ fontSize:14, fontWeight:700, color:PURPLE }}>Total: {fmt(c.cmTotalRevenue)}</div>
-              <div style={{ fontSize:13, fontWeight:700, color:c.cmNetMargin>=0?GREEN:RED }}>Margin: {fmt(c.cmNetMargin)}</div>
-            </div>
-          </Card>
-        </div>
+      {whatIfModel==='a' && <ModelAPanel state={state} calc={calc} set={set} />}
+      {whatIfModel==='b' && <ModelBPanel state={state} calc={calc} set={set} />}
 
-        <div style={{ background:c.cmRevDiff>=0?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.cmRevDiff>=0?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
-          Cohort model generates <strong style={{ color:c.cmRevDiff>=0?GREEN:RED }}>{fmt(Math.abs(c.cmRevDiff))} {c.cmRevDiff>=0?'more':'less'}</strong> revenue than current model
-        </div>
-
-        <SectionDivider label="Revenue by Partner Count" />
-        <div style={{ width:'100%', height:280 }}>
+      {/* Revenue comparison chart */}
+      <Card style={{ marginTop:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue Comparison by Partner Count</div>
+        <div style={{ width:'100%', height:300 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={compData} margin={{ top:5,right:20,bottom:5,left:20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
@@ -741,590 +632,185 @@ function CohortModelPanel({ state, calc, set }) {
               <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
               <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+' partners'} />
               <Legend />
-              <Line type="monotone" dataKey="Current Model" stroke={BLUE} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Cohort Model" stroke={PURPLE} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Current" stroke={BLUE} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Model A" stroke={TEAL} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Model B" stroke={PURPLE} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Comparison uses Tier 1 fee as baseline for current model. Costs are identical between models.</div>
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Revenue only (excludes IPP + grants). Shows how each model scales with partner growth.</div>
       </Card>
     </div>
   );
 }
 
-function PilotPanel({ state, calc, set }) {
-  const convData = useMemo(() => {
-    const arr = [];
-    for (let c = 0; c <= 100; c += 5) {
-      const yr2Rev = (calc.totalPartners - state.pilotPartners) * state.tierFees[0]
-        + state.pilotPartners * (c / 100) * state.pilotFullFee
-        + calc.ippRevenue + calc.cohortRevenue + calc.certOverageRev + calc.grantRevenue;
-      arr.push({ rate: c, margin: yr2Rev - calc.totalCost });
-    }
-    return arr;
-  }, [state, calc]);
-
+function ModelAPanel({ state, calc, set }) {
+  const s = state;
+  const c = calc;
   return (
     <div>
-      <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
-        Pilot License
-        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Model year-1 discounted licenses and the revenue drag before partners convert to full rate.</div>
+      <div style={{ background:TEAL, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
+        Model A: Per-Cohort Pricing
+        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Low annual license + pay per cohort delivered. Easy entry, scales with usage.</div>
       </div>
       <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
-        <SectionDivider label="Inputs" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <SliderField label="Pilot fee ($/yr)" value={state.pilotFee} min={0} max={10000} step={100} onChange={v=>set('pilotFee',v)} prefix="$" />
-          <SliderField label="Full fee ($/yr)" value={state.pilotFullFee} min={0} max={25000} step={100} onChange={v=>set('pilotFullFee',v)} prefix="$" />
-          <SliderField label="Pilot duration (yrs)" value={state.pilotDuration} min={1} max={3} onChange={v=>set('pilotDuration',v)} />
-          <SliderField label="Partners in pilot" value={state.pilotPartners} min={0} max={15} onChange={v=>set('pilotPartners',v)} />
-        </div>
-        <SliderField label="% pilots that convert" value={state.pilotConvertPct} min={0} max={100} onChange={v=>set('pilotConvertPct',v)} unit="%" />
-        <SectionDivider label="Results" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>Year 1 with Pilots</div>
-            <div style={{ fontSize:13 }}>Revenue: <strong>{fmt(calc.pilotYr1Revenue)}</strong></div>
-            <div style={{ fontSize:13 }}>Cost: <strong>{fmt(calc.totalCost)}</strong></div>
-            <div style={{ fontSize:13 }}>Margin: <strong style={{ color:calc.pilotYr1Margin>=0?GREEN:RED }}>{fmt(calc.pilotYr1Margin)}</strong></div>
-          </Card>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>Year 2 After Conversion</div>
-            <div style={{ fontSize:13 }}>Revenue: <strong>{fmt(calc.pilotYr2Revenue)}</strong></div>
-            <div style={{ fontSize:13 }}>Cost: <strong>{fmt(calc.totalCost)}</strong></div>
-            <div style={{ fontSize:13 }}>Margin: <strong style={{ color:calc.pilotYr2Margin>=0?GREEN:RED }}>{fmt(calc.pilotYr2Margin)}</strong></div>
-          </Card>
-        </div>
-        <div style={{ background:'#faf5ff', border:'1px solid '+PURPLE+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13 }}>
-          Pilot drag = <strong style={{ color:RED }}>{fmt(calc.pilotDrag)}</strong> vs. full-rate scenario
-        </div>
-        <SectionDivider label="Conversion Sensitivity" />
-        <div style={{ width:'100%', height:200 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={convData} margin={{ top:5,right:20,bottom:5,left:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
-              <XAxis dataKey="rate" tickFormatter={v=>v+'%'} fontSize={11} />
-              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
-              <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+'% conversion'} />
-              <ReferenceLine y={0} stroke={RED} strokeDasharray="4 4" />
-              <Line type="monotone" dataKey="margin" stroke={PURPLE} strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function ConsortiumPanel({ state, calc, set }) {
-  const equivCohortCost = state.consortiumPartners * state.cohortsPerOrg * state.costPerCohort;
-  return (
-    <div>
-      <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
-        Consortium
-        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Model a group of organizations sharing one license and pooling cohort delivery.</div>
-      </div>
-      <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
-        <SectionDivider label="Inputs" />
-        <SliderField label="Consortium fee" value={state.consortiumFee} min={0} max={30000} step={100} onChange={v=>set('consortiumFee',v)} prefix="$" />
-        <SliderField label="Partners in consortium" value={state.consortiumPartners} min={2} max={10} onChange={v=>set('consortiumPartners',v)} />
-        <SliderField label="Cohorts per consortium/yr" value={state.consortiumCohorts} min={1} max={6} onChange={v=>set('consortiumCohorts',v)} note="Cost = cohorts x $300, not per partner" />
-        <SliderField label="% that are net-new partners" value={state.consortiumNewPct} min={0} max={100} onChange={v=>set('consortiumNewPct',v)} unit="%" />
-        <SectionDivider label="Results" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>Consortium</div>
-            <div style={{ fontSize:13 }}>Total Fee: <strong>{fmt(calc.consortiumRevenue)}</strong></div>
-            <div style={{ fontSize:13 }}>Cohort Cost: <strong>{fmt(calc.consortiumCost)}</strong></div>
-            <div style={{ fontSize:13 }}>Net: <strong style={{ color:calc.consortiumMargin>=0?GREEN:RED }}>{fmt(calc.consortiumMargin)}</strong></div>
-            <div style={{ fontSize:13, marginTop:4 }}>Per-partner effective: <strong>{fmt(state.consortiumFee/state.consortiumPartners)}</strong></div>
-          </Card>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>Equivalent Individual Licenses</div>
-            <div style={{ fontSize:13 }}>Total: <strong>{fmt(calc.equivalentRevenue)}</strong></div>
-            <div style={{ fontSize:13 }}>Cohort Cost: <strong>{fmt(equivCohortCost)}</strong></div>
-            <div style={{ fontSize:13 }}>Net: <strong style={{ color:calc.equivalentRevenue-equivCohortCost>=0?GREEN:RED }}>{fmt(calc.equivalentRevenue-equivCohortCost)}</strong></div>
-          </Card>
-        </div>
-        <div style={{ background:'#faf5ff', border:'1px solid '+PURPLE+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13 }}>
-          <strong>{fmt(calc.consortiumSaving)}</strong> saved per partner vs. individual license
-        </div>
-        <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginTop:8 }}>Consortium reduces per-partner cost but may reduce total revenue if group size is small.</div>
-      </Card>
-    </div>
-  );
-}
-
-function SponsoredPanel({ state, calc, set }) {
-  const diff = Math.abs(calc.sponsoredCWPMargin - calc.sponsoredFunderMargin);
-  return (
-    <div>
-      <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
-        Sponsored
-        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Model subsidized or zero-cost licenses and who absorbs the fee gap.</div>
-      </div>
-      <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
-        <SectionDivider label="Inputs" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <SliderField label="Sponsored fee" value={state.sponsoredFee} min={0} max={10000} step={100} onChange={v=>set('sponsoredFee',v)} prefix="$" />
-          <SliderField label="Full list price" value={state.sponsoredListPrice} min={0} max={25000} step={100} onChange={v=>set('sponsoredListPrice',v)} prefix="$" />
-        </div>
-        <div style={{ marginBottom:14 }}>
-          <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Funder name</label>
-          <input type="text" value={state.sponsoredFunderName} onChange={e=>set('sponsoredFunderName',e.target.value)}
-            style={{ padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, width:'100%' }} />
-        </div>
-        <SliderField label="Sponsored partners" value={state.sponsoredPartners} min={0} max={10} onChange={v=>set('sponsoredPartners',v)} />
-        <SliderField label="Grant revenue tied to sponsorship" value={state.sponsoredGrant} min={0} max={100000} step={500} onChange={v=>set('sponsoredGrant',v)} prefix="$" />
-        <SectionDivider label="Results" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>CWP Absorbs Gap</div>
-            <div style={{ fontSize:13 }}>Gap (subsidy cost): <strong style={{ color:RED }}>{fmt(calc.sponsoredGap)}</strong></div>
-            <div style={{ fontSize:13, marginTop:4 }}>Net Margin: <strong style={{ color:calc.sponsoredCWPMargin>=0?GREEN:RED }}>{fmt(calc.sponsoredCWPMargin)}</strong></div>
-          </Card>
-          <Card style={{ background:GRAY50 }}>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>{state.sponsoredFunderName} Covers Gap</div>
-            <div style={{ fontSize:13 }}>Gap as external revenue: <strong style={{ color:GREEN }}>{fmt(calc.sponsoredGap)}</strong></div>
-            <div style={{ fontSize:13, marginTop:4 }}>Net Margin: <strong style={{ color:calc.sponsoredFunderMargin>=0?GREEN:RED }}>{fmt(calc.sponsoredFunderMargin)}</strong></div>
-          </Card>
-        </div>
-        <div style={{ background:'#faf5ff', border:'1px solid '+PURPLE+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
-          Margin difference between framings: <strong>{fmt(diff)}</strong>
-        </div>
-        <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginTop:8 }}>This is a framing difference, not a financial difference {'\u2014'} the cash outcome depends on whether the funder commitment is confirmed.</div>
-      </Card>
-    </div>
-  );
-}
-
-// ═══ OVERVIEW TAB ═══
-function OverviewTab({ state, calc, bothWorldsLens, setBothWorldsLens }) {
-  const lensCalc = useMemo(() => {
-    if (!bothWorldsLens) return null;
-    const s = state;
-    const effP = calc.totalPartners * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
-    const actOrgs = effP * (s.pctLicenseToActive / 100);
-    const coh = actOrgs * s.cohortsPerOrg;
-    const parts = coh * s.avgParticipants;
-    const overages = Math.max(0, parts - calc.totalPartners * 15);
-    return { ippRevenue:0, cohortRevenue:coh*500, certOverageRev:overages*s.feeCertOverage, grantRevenue:0,
-      totalRevenue:calc.licenseRevenue+0+coh*500+overages*s.feeCertOverage+0 };
-  }, [bothWorldsLens, state, calc]);
-
-  const c = bothWorldsLens && lensCalc ? { ...calc, ...lensCalc } : calc;
-  const chartData = [
-    { name:'License', value:c.licenseRevenue, color:BLUE },
-    { name:'IPP', value:c.ippRevenue, color:TEAL },
-    { name:'Cohort', value:c.cohortRevenue, color:PURPLE },
-    { name:'Cert Overage', value:c.certOverageRev, color:GREEN },
-    { name:'Grants', value:c.grantRevenue, color:'#4ade80' },
-    { name:'Fixed Costs', value:-calc.fixedTotal, color:RED },
-    { name:'Variable', value:-(calc.ippCostTotal+calc.cohortCostTotal+calc.certCostTotal), color:ORANGE },
-  ];
-  const revSources = [
-    { label:'License / Membership', value:c.licenseRevenue, color:BLUE },
-    { label:'IPP Revenue', value:c.ippRevenue, color:TEAL },
-    { label:'Cohort + Cert Revenue', value:c.cohortRevenue+c.certOverageRev, color:PURPLE },
-    { label:'Grants', value:c.grantRevenue, color:GREEN },
-  ];
-  const totalRev = c.totalRevenue || 1;
-  const recurring = c.licenseRevenue + c.cohortRevenue;
-  const oneTime = c.ippRevenue + c.grantRevenue;
-  const stabTotal = recurring + oneTime || 1;
-
-  return (
-    <div>
-      {bothWorldsLens && <div style={{ background:'#eff6ff', border:'1px solid '+BLUE+'33', borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:13, fontWeight:600, color:BLUE }}>Viewing: Membership-Stable Lens (inputs unchanged)</div>}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue vs. Cost</div>
-        <div style={{ width:'100%', height:300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
-              <XAxis dataKey="name" fontSize={11} />
-              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
-              <Tooltip formatter={v=>fmt(v)} />
-              <ReferenceLine y={0} stroke={GRAY900} />
-              <Bar dataKey="value" radius={[4,4,0,0]}>
-                {chartData.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue Source Breakdown</div>
-        {revSources.map(src => {
-          const p = totalRev > 0 ? (src.value / totalRev) * 100 : 0;
-          return (
-            <div key={src.label} style={{ marginBottom:10 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:3 }}>
-                <span style={{ fontWeight:600, color:GRAY700 }}>{src.label}</span>
-                <span style={{ color:GRAY500 }}>{fmt(src.value)} ({p.toFixed(1)}%)</span>
-              </div>
-              <div style={{ background:GRAY200, borderRadius:4, height:8, overflow:'hidden' }}>
-                <div style={{ width:Math.max(0,p)+'%', height:'100%', background:src.color, borderRadius:4 }} />
-              </div>
-            </div>
-          );
-        })}
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue Stability</div>
-        <div style={{ background:GRAY200, borderRadius:6, height:24, overflow:'hidden', display:'flex' }}>
-          <div style={{ width:(recurring/stabTotal)*100+'%', background:BLUE, height:'100%' }} />
-          <div style={{ width:(oneTime/stabTotal)*100+'%', background:TEAL, height:'100%' }} />
-        </div>
-        <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginTop:6, color:GRAY500 }}>
-          <span><span style={{ display:'inline-block', width:10, height:10, background:BLUE, borderRadius:2, marginRight:4, verticalAlign:'middle' }}></span>Recurring ({fmt(recurring)})</span>
-          <span><span style={{ display:'inline-block', width:10, height:10, background:TEAL, borderRadius:2, marginRight:4, verticalAlign:'middle' }}></span>One-time ({fmt(oneTime)})</span>
-        </div>
-        <div style={{ fontSize:13, fontWeight:600, marginTop:8 }}>Stability Score: {pct(c.totalRevenue>0?recurring/c.totalRevenue:0)}</div>
-      </Card>
-      <Card>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <span style={{ fontSize:12, color:GRAY500, fontWeight:600 }}>IPP-Heavy / Grant-Funded</span>
-          <button onClick={()=>setBothWorldsLens(!bothWorldsLens)} style={{
-            width:44, height:24, borderRadius:12, border:'none', cursor:'pointer',
-            background:bothWorldsLens?BLUE:GRAY200, position:'relative', transition:'background 0.2s' }}>
-            <span style={{ position:'absolute', top:2, left:bothWorldsLens?22:2, width:20, height:20, borderRadius:10, background:'white', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }} />
-          </button>
-          <span style={{ fontSize:12, color:bothWorldsLens?BLUE:GRAY500, fontWeight:600 }}>Membership / Cohort-Stable</span>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ═══ PARTNERS & GROWTH TAB ═══
-function PartnersGrowthTab({ state, calc, set, setPartnerCount, setTierFee, editTierFees, setEditTierFees, resetFees }) {
-  const renewCount = Math.round(calc.totalPartners * (state.renewalRate / 100));
-  const churnCount = Math.round(calc.totalPartners * (1 - state.renewalRate / 100));
-
-  const stages = [
-    { label:'IPP Enrollments', value:state.newIPPInstructors },
-    { label:'Licensed Orgs', value:Math.round(state.newIPPInstructors*(state.pctIPPtoLicense/100)) },
-    { label:'Active Partners', value:Math.round(calc.effectivePartners) },
-    { label:'Running Cohorts', value:Math.round(calc.activeCohortOrgs) },
-    { label:'Certs Issued', value:Math.round(calc.certsIssued) },
-  ];
-  const funnelColors = [BLUE,'#2563eb','#6366f1','#8b5cf6',PURPLE];
-
-  return (
-    <div>
-      {/* ── Current Partner Base ── */}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Current Partner Base</div>
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={()=>setEditTierFees(!editTierFees)} style={{
-              padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
-              background:editTierFees?BLUE:'white', color:editTierFees?'white':GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
-            }}>{editTierFees?'Done Editing Fees':'Edit Tier Fees'}</button>
-            <button onClick={resetFees} style={{
-              padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
-              background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
-            }}>Reset Fees</button>
-          </div>
-        </div>
-        {TIERS.map((tier, i) => (
-          <div key={i} style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12, padding:'8px 12px', background:GRAY50, borderRadius:8 }}>
-            <div style={{ width:140, fontSize:13, fontWeight:600, color:GRAY700 }}>
-              {tier.label}
-              <div style={{ fontSize:12, color:GRAY500 }}>{fmt(state.tierFees[i])}</div>
-            </div>
-            {editTierFees && <input type="number" value={state.tierFees[i]} onChange={e=>setTierFee(i,Number(e.target.value))}
-              style={{ width:90, padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right' }} />}
-            <input type="number" min={0} value={state.partnerCounts[i]} onChange={e=>setPartnerCount(i,Math.max(0,Number(e.target.value)||0))}
-              style={{ width:70, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:16, fontWeight:700, textAlign:'center', color:BLUE, fontFamily:"'Inter',sans-serif" }} />
-            <div style={{ width:100, fontSize:12, color:GRAY500, textAlign:'right' }}>
-              {fmt(state.partnerCounts[i]*state.tierFees[i])}<br/>{state.partnerCounts[i]*tier.instructors} instr.
-            </div>
-          </div>
-        ))}
-        {/* Custom Tiers */}
-        {(state.customTiers || []).map((ct, i) => (
-          <div key={'ct'+i} style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12, padding:'8px 12px', background:'#faf5ff', borderRadius:8, border:'1px solid '+PURPLE+'22' }}>
-            <input type="text" value={ct.label} placeholder="Name (e.g. Groundworks)"
-              onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], label: e.target.value }; set('customTiers', next); }}
-              style={{ width:120, padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
-            <div style={{ fontSize:11, color:GRAY500 }}>
-              <div>Instr:</div>
-              <input type="number" value={ct.instructors} min={1} max={20}
-                onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], instructors: Number(e.target.value) }; set('customTiers', next); }}
-                style={{ width:50, padding:'2px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />
-            </div>
-            <div style={{ fontSize:11, color:GRAY500 }}>
-              <div>Fee:</div>
-              <input type="number" value={ct.fee}
-                onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], fee: Number(e.target.value) }; set('customTiers', next); }}
-                style={{ width:80, padding:'2px 6px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:12, textAlign:'right' }} />
-            </div>
-            <input type="number" min={0} value={ct.count || 0}
-              onChange={e => { const next = [...state.customTiers]; next[i] = { ...next[i], count: Math.max(0, Number(e.target.value)||0) }; set('customTiers', next); }}
-              style={{ width:70, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:16, fontWeight:700, textAlign:'center', color:PURPLE, fontFamily:"'Inter',sans-serif" }} />
-            <div style={{ width:100, fontSize:12, color:GRAY500, textAlign:'right' }}>
-              {fmt((ct.count||0)*ct.fee)}<br/>{(ct.count||0)*ct.instructors} instr.
-            </div>
-            <button onClick={() => { const next = [...state.customTiers]; next.splice(i, 1); set('customTiers', next); }}
-              style={{ padding:'4px 8px', fontSize:14, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer', lineHeight:1 }}>
-              {'\u00D7'}
-            </button>
-          </div>
-        ))}
-        <button onClick={() => set('customTiers', [...(state.customTiers || []), { label: '', instructors: 1, fee: 0, count: 0 }])}
-          style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+PURPLE+'44',
-            background:'#faf5ff', color:PURPLE, cursor:'pointer', fontFamily:"'Inter',sans-serif", marginBottom:12 }}>
-          + Add Custom Rate
-        </button>
-        {/* Summary */}
-        <div style={{ display:'flex', gap:24, flexWrap:'wrap', padding:'12px 0 0', borderTop:'1px solid '+GRAY200 }}>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Partners</div><div style={{ fontSize:22, fontWeight:700, color:BLUE }}>{calc.totalPartners}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>Instructors</div><div style={{ fontSize:22, fontWeight:700, color:TEAL }}>{calc.totalInstructors}</div></div>
-          <div><div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>License Revenue</div><div style={{ fontSize:22, fontWeight:700, color:GREEN }}>{fmt(calc.licenseRevenue)}</div></div>
-        </div>
-      </Card>
-
-      {/* ── Retention ── */}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Retention & Activity</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-          <SliderField label="License renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
-          <SliderField label="Dormant partner rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" note="Licensed but not running cohorts" />
+          <InputField label="Annual license fee (flat)" value={s.modelA_annualFee} min={0} max={10000} step={100} onChange={v=>set('modelA_annualFee',v)} prefix="$" note="Per partner, not per instructor" />
+          <InputField label="Small cohort threshold" value={s.modelA_threshold} min={2} max={15} onChange={v=>set('modelA_threshold',v)} note="Below this = small cohort" />
+          <InputField label={'Small cohort fee (< '+s.modelA_threshold+')'} value={s.modelA_smallCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_smallCohortFee',v)} prefix="$" />
+          <InputField label={'Large cohort fee ('+s.modelA_threshold+'+ participants)'} value={s.modelA_largeCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_largeCohortFee',v)} prefix="$" />
+          <InputField label="% of cohorts that are small" value={s.modelA_pctSmall} min={0} max={100} onChange={v=>set('modelA_pctSmall',v)} unit="%" />
         </div>
-        <div style={{ display:'flex', gap:16, alignItems:'center', marginTop:4 }}>
-          <div style={{ flex:1, background:GRAY200, borderRadius:6, height:16, overflow:'hidden', display:'flex' }}>
-            <div style={{ width:(calc.totalPartners>0?(renewCount/calc.totalPartners)*100:0)+'%', background:GREEN, height:'100%' }} />
-            <div style={{ width:(calc.totalPartners>0?(churnCount/calc.totalPartners)*100:0)+'%', background:RED, height:'100%' }} />
-          </div>
-          <div style={{ fontSize:12, color:GRAY500, minWidth:160 }}>
-            <span style={{ color:GREEN, fontWeight:600 }}>{renewCount} renew</span> / <span style={{ color:RED, fontWeight:600 }}>{churnCount} churn</span>
-          </div>
-        </div>
-      </Card>
 
-      {/* ── Growth & Pipeline ── */}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Growth & Pipeline</div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-          <SliderField label="New IPP instructors this cycle" value={state.newIPPInstructors} min={0} max={30} onChange={v=>set('newIPPInstructors',v)} />
-          <SliderField label="% IPP to licensed org" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
-          <SliderField label="% licensed orgs running 1+ cohort/yr" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
-          <SliderField label="Cohorts per active org/yr" value={state.cohortsPerOrg} min={1} max={6} onChange={v=>set('cohortsPerOrg',v)} />
-        </div>
-        <SliderField label="Avg participants per cohort" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
-        {state.avgParticipants===15 && <div style={{ fontSize:12, fontWeight:600, color:AMBER, marginTop:-8, marginBottom:8 }}>At cohort cap (15 participants max)</div>}
-      </Card>
-
-      {/* ── Funnel + Revenue Output ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-        <Card>
-          <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Conversion Funnel</div>
-          {stages.map((stage, i) => {
-            const widthPct = 100 - i * 12;
-            const dropoff = i>0 && stages[i-1].value>0 ? ((1-stage.value/stages[i-1].value)*100).toFixed(0) : null;
-            return (
-              <div key={i} style={{ marginBottom:3 }}>
-                <div style={{ width:widthPct+'%', margin:'0 auto', background:funnelColors[i], color:'white', padding:'8px 12px',
-                  borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, fontWeight:600 }}>
-                  <span>{stage.label}</span>
-                  <span style={{ fontSize:16, fontWeight:700 }}>{stage.value}</span>
-                </div>
-                {dropoff!==null && <div style={{ textAlign:'center', fontSize:10, color:GRAY500, margin:'1px 0' }}>{dropoff}% drop</div>}
-              </div>
-            );
-          })}
-        </Card>
-        <Card>
-          <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline Revenue</div>
-          <div style={{ display:'grid', gap:16 }}>
-            <div style={{ padding:'12px', background:GRAY50, borderRadius:8 }}>
-              <div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500, marginBottom:4 }}>IPP Revenue</div>
-              <div style={{ fontSize:22, fontWeight:700, color:TEAL }}>{fmt(calc.ippRevenue)}</div>
-              <div style={{ fontSize:11, color:GRAY500 }}>{state.newIPPInstructors} instructors x {fmt(state.feeIPP)}</div>
+        <Toggle label="Enable pilot discount" value={s.modelA_pilotEnabled} onChange={v=>set('modelA_pilotEnabled',v)} />
+        {s.modelA_pilotEnabled && (
+          <div style={{ background:'#f0fdfa', border:'1px solid '+TEAL+'33', borderRadius:8, padding:14, marginBottom:12 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:TEAL, marginBottom:8 }}>Pilot Discount</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+              <InputField label="Pilot annual fee" value={s.modelA_pilotFee} min={0} max={5000} step={50} onChange={v=>set('modelA_pilotFee',v)} prefix="$" />
+              <InputField label="Pilot cohort fee" value={s.modelA_pilotCohortFee} min={0} max={3000} step={25} onChange={v=>set('modelA_pilotCohortFee',v)} prefix="$" />
+              <InputField label="Pilot partners" value={s.modelA_pilotPartners} min={0} max={20} onChange={v=>set('modelA_pilotPartners',v)} />
+              <InputField label="Pilot duration (years)" value={s.modelA_pilotDuration} min={1} max={3} onChange={v=>set('modelA_pilotDuration',v)} />
+              <InputField label="% convert to full rate" value={s.modelA_pilotConvertPct} min={0} max={100} onChange={v=>set('modelA_pilotConvertPct',v)} unit="%" />
             </div>
-            <div style={{ padding:'12px', background:GRAY50, borderRadius:8 }}>
-              <div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500, marginBottom:4 }}>Cohort Revenue</div>
-              <div style={{ fontSize:22, fontWeight:700, color:PURPLE }}>{fmt(calc.cohortRevenue)}</div>
-              <div style={{ fontSize:11, color:GRAY500 }}>{Math.round(calc.totalCohorts)} cohorts x {fmt(state.feeCohort)}</div>
-            </div>
-            <div style={{ padding:'12px', background:GRAY50, borderRadius:8 }}>
-              <div style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500, marginBottom:4 }}>Certificates</div>
-              <div style={{ fontSize:22, fontWeight:700, color:GRAY900 }}>{Math.round(calc.certsIssued)} issued</div>
-              <div style={{ fontSize:11, color:GRAY500 }}>{Math.round(calc.certOverages)} overages = {fmt(calc.certOverageRev)} revenue</div>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ═══ COSTS TAB ═══
-function CostsTab({ state, calc, set }) {
-  return (
-    <div>
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Fixed Costs (Annual)" />
-        <SliderField label="Staff base time" value={state.costStaff} min={0} max={120000} step={500} onChange={v=>set('costStaff',v)} prefix="$" />
-        <SliderField label="LMS (Thinkific)" value={state.costLMS} min={0} max={5000} step={50} onChange={v=>set('costLMS',v)} prefix="$" />
-        <SliderField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={15000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
-        <SliderField label="Airtable + Systems" value={state.costSystems} min={0} max={5000} step={50} onChange={v=>set('costSystems',v)} prefix="$" />
-        <div style={{ fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:8 }}>Fixed Total: {fmt(calc.fixedTotal)}</div>
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Semi-Variable Costs (Per Event)" />
-        <SliderField label="IPP delivery cost" value={state.costPerIPP} min={0} max={2000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" note="per instructor" />
-        <SliderField label="Cohort processing cost" value={state.costPerCohort} min={0} max={2000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" note="per cohort" />
-        <SliderField label="Cert issuance cost" value={state.costPerCert} min={0} max={50} step={1} onChange={v=>set('costPerCert',v)} prefix="$" note="per certificate" />
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Revenue Inputs" />
-        <SliderField label="IPP fee" value={state.feeIPP} min={500} max={5000} step={100} onChange={v=>set('feeIPP',v)} prefix="$" />
-        <SliderField label="Cohort fee" value={state.feeCohort} min={0} max={1000} step={25} onChange={v=>set('feeCohort',v)} prefix="$" />
-        <SliderField label="Cert overage fee" value={state.feeCertOverage} min={0} max={200} step={5} onChange={v=>set('feeCertOverage',v)} prefix="$" />
-      </Card>
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Funders & Grants" />
-        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Add external funding sources — grants, contracts, sponsorships.</div>
-        {(state.funders || []).map((f, i) => (
-          <div key={i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
-            <input type="text" value={f.name} placeholder="Funder name"
-              onChange={e => { const next = [...state.funders]; next[i] = { ...next[i], name: e.target.value }; set('funders', next); }}
-              style={{ flex:1, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" }} />
-            <input type="number" value={f.amount} placeholder="Amount"
-              onChange={e => { const next = [...state.funders]; next[i] = { ...next[i], amount: Number(e.target.value) }; set('funders', next); }}
-              style={{ width:120, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right', fontFamily:"'Inter',sans-serif" }} />
-            <span style={{ fontSize:13, fontWeight:700, color:GREEN, minWidth:80 }}>{fmt(f.amount || 0)}</span>
-            <button onClick={() => { const next = [...state.funders]; next.splice(i, 1); set('funders', next); }}
-              style={{ padding:'4px 8px', fontSize:14, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer', lineHeight:1 }}>
-              {'\u00D7'}
-            </button>
-          </div>
-        ))}
-        <button onClick={() => set('funders', [...(state.funders || []), { name: '', amount: 0 }])}
-          style={{ padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200,
-            background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' }}>
-          + Add Funder
-        </button>
-        {(state.funders || []).length > 0 && (
-          <div style={{ fontSize:13, fontWeight:700, color:GREEN, textAlign:'right', marginTop:10 }}>
-            Total Grant Revenue: {fmt((state.funders || []).reduce((s, f) => s + (f.amount || 0), 0))}
+            <div style={{ fontSize:12, color:TEAL, fontWeight:600, marginTop:4 }}>Pilot drag: {fmt(c.maPilotDrag)}/yr during pilot period</div>
           </div>
         )}
+
+        <SectionDivider label="vs. Current Model" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <Card style={{ background:GRAY50 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:BLUE, marginBottom:8 }}>Current (Instructor Tiers)</div>
+            <div style={{ fontSize:12 }}>License: <strong>{fmt(c.licenseRevenue)}</strong></div>
+            <div style={{ fontSize:12 }}>Cohort + Cert: <strong>{fmt(c.cohortRevenue + c.certOverageRev)}</strong></div>
+            <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
+            <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:BLUE }}>Revenue: {fmt(c.totalRevenue)}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:c.netMargin>=0?GREEN:RED }}>Margin: {fmt(c.netMargin)}</div>
+          </Card>
+          <Card style={{ background:'#f0fdfa' }}>
+            <div style={{ fontSize:13, fontWeight:700, color:TEAL, marginBottom:8 }}>Model A: Per-Cohort</div>
+            <div style={{ fontSize:12 }}>Annual fees: <strong>{fmt(c.maAnnualRev)}</strong> <span style={{ color:GRAY500 }}>({c.totalPartners} x {fmt(s.modelA_annualFee)})</span></div>
+            <div style={{ fontSize:12 }}>Cohort fees: <strong>{fmt(c.maCohortRev)}</strong> <span style={{ color:GRAY500 }}>({c.maSmall} sm + {c.maLarge} lg)</span></div>
+            <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
+            {s.modelA_pilotEnabled && <div style={{ fontSize:12, color:RED }}>Pilot drag: <strong>{fmt(-c.maPilotDrag)}</strong></div>}
+            <div style={{ borderTop:'1px solid '+TEAL+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:TEAL }}>Revenue: {fmt(c.maTotalRev)}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:c.maNetMargin>=0?GREEN:RED }}>Margin: {fmt(c.maNetMargin)}</div>
+          </Card>
+        </div>
+        <div style={{ background:c.maTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.maTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
+          Model A generates <strong style={{ color:c.maTotalRev>=c.totalRevenue?GREEN:RED }}>{fmt(Math.abs(c.maTotalRev-c.totalRevenue))} {c.maTotalRev>=c.totalRevenue?'more':'less'}</strong> than current model
+          {c.maTotalRev<c.totalRevenue && <span style={{ color:GRAY500 }}> — but lower barrier may bring more partners</span>}
+        </div>
       </Card>
     </div>
   );
 }
 
-
-
-// ═══ SENSITIVITY TAB ═══
-function SensitivityTab({ data, overlay, setOverlay, lens, setLens }) {
+function ModelBPanel({ state, calc, set }) {
+  const s = state;
+  const c = calc;
   return (
     <div>
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Net Margin Sensitivity {'\u2014'} Partner Count</div>
-        <div style={{ display:'flex', gap:16, marginBottom:16, alignItems:'center', flexWrap:'wrap' }}>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, color:GRAY700, marginRight:6 }}>Overlay scenario:</label>
-            <select value={overlay} onChange={e=>setOverlay(e.target.value)} style={{ padding:'4px 8px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:6 }}>
-              <option>None</option><option>Cohort-Based</option><option>Pilot</option><option>Consortium</option><option>Sponsored</option>
-            </select>
-          </div>
-          <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color:GRAY700, cursor:'pointer' }}>
-            <input type="checkbox" checked={lens} onChange={e=>setLens(e.target.checked)} />
-            Show membership-stable lens
-          </label>
+      <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
+        Model B: Cohort Packages
+        <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Bundled packages orgs can plan and budget around. Predictable for everyone.</div>
+      </div>
+      <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
+        <div style={{ fontSize:13, fontWeight:600, color:GRAY900, marginBottom:12 }}>Define your packages:</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, marginBottom:12 }}>
+          <Card style={{ background:'#faf5ff', padding:'12px' }}>
+            <input type="text" value={s.modelB_starterName} onChange={e=>set('modelB_starterName',e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
+            <InputField label="Cohorts included" value={s.modelB_starterCohorts} min={1} max={10} onChange={v=>set('modelB_starterCohorts',v)} />
+            <InputField label="Annual fee" value={s.modelB_starterFee} min={0} max={10000} step={100} onChange={v=>set('modelB_starterFee',v)} prefix="$" />
+            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt(s.modelB_starterFee/Math.max(s.modelB_starterCohorts,1))}</div>
+          </Card>
+          <Card style={{ background:'#faf5ff', padding:'12px' }}>
+            <input type="text" value={s.modelB_standardName} onChange={e=>set('modelB_standardName',e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
+            <InputField label="Cohorts included" value={s.modelB_standardCohorts} min={1} max={10} onChange={v=>set('modelB_standardCohorts',v)} />
+            <InputField label="Annual fee" value={s.modelB_standardFee} min={0} max={15000} step={100} onChange={v=>set('modelB_standardFee',v)} prefix="$" />
+            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt(s.modelB_standardFee/Math.max(s.modelB_standardCohorts,1))}</div>
+          </Card>
+          <Card style={{ background:'#faf5ff', padding:'12px' }}>
+            <input type="text" value={s.modelB_growthName} onChange={e=>set('modelB_growthName',e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
+            <InputField label="Cohorts included" value={s.modelB_growthCohorts} min={1} max={10} onChange={v=>set('modelB_growthCohorts',v)} />
+            <InputField label="Annual fee" value={s.modelB_growthFee} min={0} max={20000} step={100} onChange={v=>set('modelB_growthFee',v)} prefix="$" />
+            <div style={{ fontSize:11, color:GRAY500 }}>Per cohort: {fmt(s.modelB_growthFee/Math.max(s.modelB_growthCohorts,1))}</div>
+          </Card>
         </div>
-        <div style={{ width:'100%', height:300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top:5,right:20,bottom:5,left:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
-              <XAxis dataKey="partners" label={{ value:'# Partners (1-instructor tier)', position:'insideBottom', offset:-2, fontSize:11 }} fontSize={11} />
-              <YAxis tickFormatter={v=>fmt(v)} label={{ value:'Net Margin', angle:-90, position:'insideLeft', fontSize:11 }} fontSize={11} />
-              <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+' partners'} />
-              <Legend />
-              <ReferenceLine y={0} stroke={RED} strokeDasharray="4 4" label={{ value:'Break-Even', position:'right', fontSize:11, fill:RED }} />
-              <Line type="monotone" dataKey="Baseline" stroke={BLUE} strokeWidth={2} dot={false} />
-              {overlay!=='None' && <Line type="monotone" dataKey={overlay} stroke={PURPLE} strokeWidth={2} dot={false} />}
-              {lens && <Line type="monotone" dataKey="Membership-Stable" stroke={GREEN} strokeWidth={2} strokeDasharray="6 3" dot={false} />}
-            </LineChart>
-          </ResponsiveContainer>
+
+        <SectionDivider label="Expected Partner Mix" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 16px' }}>
+          <InputField label={'% '+s.modelB_starterName} value={s.modelB_pctStarter} min={0} max={100} onChange={v=>set('modelB_pctStarter',v)} unit="%" />
+          <InputField label={'% '+s.modelB_standardName} value={s.modelB_pctStandard} min={0} max={100} onChange={v=>set('modelB_pctStandard',v)} unit="%" />
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:GRAY700, marginBottom:4 }}>% {s.modelB_growthName}</div>
+            <div style={{ fontSize:14, fontWeight:700, color:PURPLE, padding:'6px 10px' }}>{Math.max(0,100-s.modelB_pctStarter-s.modelB_pctStandard)}%</div>
+          </div>
+        </div>
+
+        <Toggle label="Enable pilot discount" value={s.modelB_pilotEnabled} onChange={v=>set('modelB_pilotEnabled',v)} />
+        {s.modelB_pilotEnabled && (
+          <div style={{ background:'#faf5ff', border:'1px solid '+PURPLE+'33', borderRadius:8, padding:14, marginBottom:12 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:8 }}>Pilot Discount</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+              <InputField label="Pilot package fee" value={s.modelB_pilotFee} min={0} max={5000} step={50} onChange={v=>set('modelB_pilotFee',v)} prefix="$" note="Discounted rate for pilot partners" />
+              <InputField label="Pilot partners" value={s.modelB_pilotPartners} min={0} max={20} onChange={v=>set('modelB_pilotPartners',v)} />
+              <InputField label="Pilot duration (years)" value={s.modelB_pilotDuration} min={1} max={3} onChange={v=>set('modelB_pilotDuration',v)} />
+              <InputField label="% convert to full rate" value={s.modelB_pilotConvertPct} min={0} max={100} onChange={v=>set('modelB_pilotConvertPct',v)} unit="%" />
+            </div>
+            <div style={{ fontSize:12, color:PURPLE, fontWeight:600, marginTop:4 }}>Pilot drag: {fmt(c.mbPilotDrag)}/yr during pilot period</div>
+          </div>
+        )}
+
+        <SectionDivider label="vs. Current Model" />
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <Card style={{ background:GRAY50 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:BLUE, marginBottom:8 }}>Current (Instructor Tiers)</div>
+            <div style={{ fontSize:12 }}>License: <strong>{fmt(c.licenseRevenue)}</strong></div>
+            <div style={{ fontSize:12 }}>Cohort + Cert: <strong>{fmt(c.cohortRevenue + c.certOverageRev)}</strong></div>
+            <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
+            <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:BLUE }}>Revenue: {fmt(c.totalRevenue)}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:c.netMargin>=0?GREEN:RED }}>Margin: {fmt(c.netMargin)}</div>
+          </Card>
+          <Card style={{ background:'#faf5ff' }}>
+            <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:8 }}>Model B: Packages</div>
+            <div style={{ fontSize:12 }}>{s.modelB_starterName}: <strong>{fmt(c.mbStarter*s.modelB_starterFee)}</strong> <span style={{ color:GRAY500 }}>({c.mbStarter} orgs)</span></div>
+            <div style={{ fontSize:12 }}>{s.modelB_standardName}: <strong>{fmt(c.mbStandard*s.modelB_standardFee)}</strong> <span style={{ color:GRAY500 }}>({c.mbStandard} orgs)</span></div>
+            <div style={{ fontSize:12 }}>{s.modelB_growthName}: <strong>{fmt(c.mbGrowth*s.modelB_growthFee)}</strong> <span style={{ color:GRAY500 }}>({c.mbGrowth} orgs)</span></div>
+            <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
+            {s.modelB_pilotEnabled && <div style={{ fontSize:12, color:RED }}>Pilot drag: <strong>{fmt(-c.mbPilotDrag)}</strong></div>}
+            <div style={{ borderTop:'1px solid '+PURPLE+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:PURPLE }}>Revenue: {fmt(c.mbTotalRev)}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:c.mbNetMargin>=0?GREEN:RED }}>Margin: {fmt(c.mbNetMargin)}</div>
+          </Card>
+        </div>
+        <div style={{ background:c.mbTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.mbTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
+          Model B generates <strong style={{ color:c.mbTotalRev>=c.totalRevenue?GREEN:RED }}>{fmt(Math.abs(c.mbTotalRev-c.totalRevenue))} {c.mbTotalRev>=c.totalRevenue?'more':'less'}</strong> than current model
+          {c.mbTotalRev<c.totalRevenue && <span style={{ color:GRAY500 }}> — predictable packages may attract more orgs</span>}
         </div>
       </Card>
-      <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic' }}>Sensitivity uses 1-instructor tier as baseline unit. All Costs tab inputs apply.</div>
     </div>
   );
 }
 
-// ═══ FORECAST TAB ═══
-function ForecastTab({ state, calc, forecast, set }) {
+// ═══ 5-YEAR OUTLOOK TAB ═══
+function OutlookTab({ state, calc, forecast, set }) {
+  const s = state;
   const { years, breakEvenYear } = forecast;
   const yr5 = years[4];
 
-  // Build baseline (no scenario) for comparison
-  const baselineForecast = useMemo(() => {
-    const s = { ...state, forecastScenario: 'none' };
-    const startPartners = s.partnerCounts.reduce((a,b) => a+b, 0);
-    const ippFees = [s.feeIPP, s.ippFeeYr2, s.ippFeeYr3, s.ippFeeYr4, s.ippFeeYr5];
-    const yrs = [];
-    for (let yr = 0; yr < 5; yr++) {
-      const feeEsc = Math.pow(1 + s.feeEscalation / 100, yr);
-      const cohortFeeEsc = Math.pow(1 + s.cohortFeeEscalation / 100, yr);
-      const costInf = Math.pow(1 + s.costInflation / 100, yr);
-      const varCostInf = Math.pow(1 + s.variableCostInflation / 100, yr);
-      const pipeGrow = Math.pow(1 + s.pipelineGrowth / 100, yr);
-      const grantGrow = Math.pow(1 + s.grantGrowthRate / 100, yr);
-      let partners;
-      if (yr === 0) { partners = startPartners; }
-      else { const prev = yrs[yr-1]; partners = Math.round(prev.partners*(s.renewalRate/100)) + Math.round(prev.newIPP*(s.pctIPPtoLicense/100)); }
-      const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
-      const licRev = s.partnerCounts.reduce((sum, c, i) => {
-        const share = startPartners > 0 ? c / startPartners : (i===0?1:0);
-        return sum + Math.round(partners * share) * s.tierFees[i] * feeEsc;
-      }, 0);
-      const effP = partners * (s.renewalRate/100) * (1 - s.dormantRate/100);
-      const coh = effP * (s.pctLicenseToActive/100) * s.cohortsPerOrg;
-      const parts = coh * s.avgParticipants;
-      const overages = Math.max(0, parts - partners*15);
-      const grantBase = (s.funders || []).reduce((sum, f) => sum + (f.amount || 0), 0);
-      const totalRev = licRev + newIPP*(ippFees[yr]||ippFees[4]) + coh*s.feeCohort*cohortFeeEsc + overages*s.feeCertOverage + grantBase*grantGrow;
-      const staffInf = Math.pow(1 + s.staffRaiseRate / 100, yr);
-      const calYr = s.forecastStartYear + yr;
-      const accredC = s.costAccreditation*costInf + (calYr===s.reaccredYear?s.reaccredCost:0);
-      const fixedT = s.costStaff*staffInf + s.costLMS*costInf + accredC + s.costSystems*costInf;
-      const totalCost = fixedT + newIPP*s.costPerIPP*varCostInf + coh*s.costPerCohort*varCostInf + parts*s.costPerCert*varCostInf;
-      yrs.push({ year: yr+1, label: 'Year '+(yr+1), partners, newIPP, totalRevenue: totalRev, totalCost, netMargin: totalRev - totalCost });
-    }
-    return yrs;
-  }, [state]);
-
-  // Chart data for revenue stacked area
-  const revenueChartData = years.map(y => ({
+  const marginData = years.map(y => ({
     name: y.label,
-    License: Math.round(y.licenseRevenue),
-    IPP: Math.round(y.ippRevenue),
-    Cohort: Math.round(y.cohortRevenue),
-    Certs: Math.round(y.certRevenue),
-    Grants: Math.round(y.grantRevenue),
+    Current: Math.round(y.currentRev - y.totalCost),
+    'Model A': Math.round(y.maRev - y.totalCost),
+    'Model B': Math.round(y.mbRev - y.totalCost),
   }));
 
-  // Chart data for margin comparison
-  const marginChartData = years.map((y, i) => {
-    const entry = { name: y.label, Forecast: Math.round(y.netMargin) };
-    if (state.forecastScenario !== 'none') {
-      entry['Baseline'] = Math.round(baselineForecast[i].netMargin);
-    }
-    return entry;
-  });
-
-  // Chart data for cumulative
-  const cumChartData = years.map(y => ({
+  const revenueData = years.map(y => ({
     name: y.label,
-    'Cumulative Revenue': Math.round(y.cumRevenue),
-    'Cumulative Cost': Math.round(y.cumCost),
-    'Cumulative Margin': Math.round(y.cumMargin),
+    Current: Math.round(y.currentRev),
+    'Model A': Math.round(y.maRev),
+    'Model B': Math.round(y.mbRev),
+    Costs: Math.round(y.totalCost),
   }));
 
   const thS = { textAlign:'right', padding:'8px 10px', fontSize:12, fontWeight:700, color:GRAY700, borderBottom:'2px solid '+GRAY200 };
@@ -1332,224 +818,128 @@ function ForecastTab({ state, calc, forecast, set }) {
 
   return (
     <div>
-      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>
-        5-year projection based on current inputs with growth, escalation, and inflation assumptions.
-      </div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>5-year projection comparing all pricing models. Select which model to use for the detailed forecast below.</div>
 
-      {/* Forecast Inputs */}
+      {/* Forecast assumptions */}
       <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Growth & Escalation Assumptions" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-          <SliderField label="License fee escalation" value={state.feeEscalation} min={0} max={15} step={0.5} onChange={v=>set('feeEscalation',v)} unit="%/yr" note="Applied to all tier fees annually" />
-          <SliderField label="Cohort fee escalation" value={state.cohortFeeEscalation} min={0} max={15} step={0.5} onChange={v=>set('cohortFeeEscalation',v)} unit="%/yr" />
-          <SliderField label="Staff raise rate" value={state.staffRaiseRate} min={0} max={15} step={0.5} onChange={v=>set('staffRaiseRate',v)} unit="%/yr" note="Annual staff cost increase (raises, benefits)" />
-          <SliderField label="Other fixed cost inflation" value={state.costInflation} min={0} max={15} step={0.5} onChange={v=>set('costInflation',v)} unit="%/yr" note="LMS, systems, overhead (not staff or ANSI)" />
-          <SliderField label="Variable cost inflation" value={state.variableCostInflation} min={0} max={15} step={0.5} onChange={v=>set('variableCostInflation',v)} unit="%/yr" note="IPP delivery, cohort processing, certs" />
-          <SliderField label="Pipeline growth (new IPP/yr)" value={state.pipelineGrowth} min={-20} max={50} step={1} onChange={v=>set('pipelineGrowth',v)} unit="%/yr" note="Annual growth in new IPP instructors" />
-          <SliderField label="Grant revenue growth" value={state.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%/yr" />
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Forecast Assumptions</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'0 16px' }}>
+          <InputField label="Fee escalation/yr" value={s.feeEscalation} min={0} max={15} step={0.5} onChange={v=>set('feeEscalation',v)} unit="%" />
+          <InputField label="Cost inflation/yr" value={s.costInflation} min={0} max={15} step={0.5} onChange={v=>set('costInflation',v)} unit="%" />
+          <InputField label="Staff raises/yr" value={s.staffRaiseRate} min={0} max={15} step={0.5} onChange={v=>set('staffRaiseRate',v)} unit="%" />
+          <InputField label="Pipeline growth/yr" value={s.pipelineGrowth} min={-20} max={50} onChange={v=>set('pipelineGrowth',v)} unit="%" />
         </div>
-        <SectionDivider label="Reaccreditation / ANSI" />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, marginBottom:8 }}>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Forecast start year</label>
-            <input type="number" value={state.forecastStartYear} onChange={e=>set('forecastStartYear',Number(e.target.value))}
-              style={{ width:'100%', padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
-          </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Reaccreditation year</label>
-            <input type="number" value={state.reaccredYear} onChange={e=>set('reaccredYear',Number(e.target.value))}
-              style={{ width:'100%', padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
-          </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:GRAY700, display:'block', marginBottom:4 }}>Reaccreditation cost</label>
-            <input type="number" value={state.reaccredCost} onChange={e=>set('reaccredCost',Number(e.target.value))}
-              style={{ width:'100%', padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
-          </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'0 16px' }}>
+          <InputField label="Start year" value={s.forecastStartYear} min={2024} max={2030} onChange={v=>set('forecastStartYear',v)} />
+          <InputField label="Reaccred year" value={s.reaccredYear} min={2025} max={2035} onChange={v=>set('reaccredYear',v)} />
+          <InputField label="Reaccred cost" value={s.reaccredCost} min={0} max={100000} step={1000} onChange={v=>set('reaccredCost',v)} prefix="$" />
+          <InputField label="Grant growth/yr" value={s.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%" />
         </div>
-        {state.reaccredYear >= state.forecastStartYear && state.reaccredYear < state.forecastStartYear + 5 && (
-          <div style={{ fontSize:12, color:AMBER, fontWeight:600, marginBottom:8 }}>
-            {'\u26A0'} Reaccreditation ({fmt(state.reaccredCost)}) hits in {state.reaccredYear} (Year {state.reaccredYear - state.forecastStartYear + 1} of forecast)
-          </div>
-        )}
-        <SectionDivider label="IPP Fee Schedule (by year)" />
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8 }}>
-          <div><div style={{ fontSize:11, color:GRAY500, marginBottom:4 }}>Year 1</div><div style={{ fontSize:14, fontWeight:700, color:TEAL }}>{fmt(state.feeIPP)}</div><div style={{ fontSize:10, color:GRAY400 }}>Set in Costs tab</div></div>
-          {[2,3,4,5].map(yr => (
-            <div key={yr}>
-              <div style={{ fontSize:11, color:GRAY500, marginBottom:4 }}>Year {yr}</div>
-              <input type="number" value={state['ippFeeYr'+yr]} onChange={e=>set('ippFeeYr'+yr, Number(e.target.value))}
-                style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right' }} />
-            </div>
+        <div style={{ display:'flex', gap:8, marginTop:8 }}>
+          <label style={{ fontSize:12, fontWeight:600, color:GRAY700, marginRight:4 }}>Detailed forecast uses:</label>
+          {[{k:'current',l:'Current Model',c:BLUE},{k:'a',l:'Model A',c:TEAL},{k:'b',l:'Model B',c:PURPLE}].map(o=>(
+            <button key={o.k} onClick={()=>set('forecastModel',o.k)} style={{
+              padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+(s.forecastModel===o.k?o.c:GRAY200),
+              background:s.forecastModel===o.k?o.c:'white', color:s.forecastModel===o.k?'white':GRAY700,
+              cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>{o.l}</button>
           ))}
         </div>
-        <SectionDivider label="Scenario Overlay" />
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          {[{k:'none',l:'No Scenario'},{k:'cohort-model',l:'Cohort-Based'},{k:'pilot',l:'Pilot'},{k:'consortium',l:'Consortium'},{k:'sponsored',l:'Sponsored'}].map(o => (
-            <button key={o.k} onClick={()=>set('forecastScenario',o.k)} style={{
-              padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200,
-              background:state.forecastScenario===o.k?PURPLE:'white', color:state.forecastScenario===o.k?'white':GRAY700,
-              cursor:'pointer', fontFamily:"'Inter',sans-serif"
-            }}>{o.l}</button>
-          ))}
-        </div>
-        {state.forecastScenario !== 'none' && (
-          <div style={{ fontSize:11, color:PURPLE, fontStyle:'italic', marginTop:6 }}>
-            Scenario "{state.forecastScenario}" adjustments applied to forecast. Baseline shown as comparison line.
-          </div>
-        )}
       </Card>
 
       {/* Summary KPIs */}
       <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
-        <StatCard label="5-Year Total Revenue" value={fmt(yr5.cumRevenue)} color={BLUE} sub={fmt(yr5.totalRevenue)+' in Year 5'} />
-        <StatCard label="5-Year Total Cost" value={fmt(yr5.cumCost)} color={RED} sub={fmt(yr5.totalCost)+' in Year 5'} />
-        <StatCard label="5-Year Net Margin" value={fmt(yr5.cumMargin)} color={yr5.cumMargin>=0?GREEN:RED} highlight={true} sub={pct(yr5.cumRevenue>0?yr5.cumMargin/yr5.cumRevenue:0)+' overall margin'} />
-        <StatCard label="Year 5 Partners" value={yr5.partners} color={TEAL} sub={'from '+years[0].partners+' in Year 1'} />
-        <StatCard label="Cumulative Break-Even" value={breakEvenYear ? 'Year '+breakEvenYear : 'Not reached'} color={breakEvenYear?GREEN:RED} sub={breakEvenYear?'Cumulative margin turns positive':'5-year cumulative is negative'} />
+        <StatCard label="5-Year Revenue" value={fmt(yr5.cumRevenue)} color={BLUE} sub={s.forecastModel==='a'?'Model A':s.forecastModel==='b'?'Model B':'Current'} />
+        <StatCard label="5-Year Cost" value={fmt(yr5.cumCost)} color={RED} />
+        <StatCard label="5-Year Margin" value={fmt(yr5.cumMargin)} color={yr5.cumMargin>=0?GREEN:RED} highlight={true} sub={pct(yr5.cumRevenue>0?yr5.cumMargin/yr5.cumRevenue:0)} />
+        <StatCard label="Year 5 Partners" value={yr5.partners} color={TEAL} sub={'from '+years[0].partners} />
+        <StatCard label="Break-Even" value={breakEvenYear?'Year '+breakEvenYear:'Not reached'} color={breakEvenYear?GREEN:RED} />
       </div>
 
-      {/* Revenue Stacked Bar */}
+      {/* Margin comparison chart — all 3 models */}
       <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue by Source (5-Year)</div>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Net Margin Trajectory — All Models</div>
         <div style={{ width:'100%', height:300 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={revenueChartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
-              <XAxis dataKey="name" fontSize={11} />
-              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
-              <Tooltip formatter={v=>fmt(v)} />
-              <Legend />
-              <Bar dataKey="License" stackId="a" fill={BLUE} />
-              <Bar dataKey="IPP" stackId="a" fill={TEAL} />
-              <Bar dataKey="Cohort" stackId="a" fill={PURPLE} />
-              <Bar dataKey="Certs" stackId="a" fill={GREEN} />
-              <Bar dataKey="Grants" stackId="a" fill="#4ade80" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
-      {/* Net Margin Line */}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>
-          Net Margin Trajectory
-          {state.forecastScenario !== 'none' && <span style={{ fontSize:12, fontWeight:400, color:GRAY500 }}> {'\u2014'} vs. baseline</span>}
-        </div>
-        <div style={{ width:'100%', height:280 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={marginChartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+            <LineChart data={marginData} margin={{ top:5,right:20,bottom:5,left:20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
               <XAxis dataKey="name" fontSize={11} />
               <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
               <Tooltip formatter={v=>fmt(v)} />
               <Legend />
               <ReferenceLine y={0} stroke={RED} strokeDasharray="4 4" />
-              <Line type="monotone" dataKey="Forecast" stroke={PURPLE} strokeWidth={2.5} dot={{ r:4 }} />
-              {state.forecastScenario !== 'none' && <Line type="monotone" dataKey="Baseline" stroke={BLUE} strokeWidth={2} strokeDasharray="6 3" dot={{ r:3 }} />}
+              <Line type="monotone" dataKey="Current" stroke={BLUE} strokeWidth={2} dot={{ r:3 }} />
+              <Line type="monotone" dataKey="Model A" stroke={TEAL} strokeWidth={2} dot={{ r:3 }} />
+              <Line type="monotone" dataKey="Model B" stroke={PURPLE} strokeWidth={2} dot={{ r:3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
-      {/* Cumulative P&L */}
+      {/* Revenue vs cost */}
       <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Cumulative P&L</div>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue vs. Costs</div>
         <div style={{ width:'100%', height:280 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={cumChartData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+            <BarChart data={revenueData} margin={{ top:5,right:20,bottom:5,left:20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
               <XAxis dataKey="name" fontSize={11} />
               <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
               <Tooltip formatter={v=>fmt(v)} />
               <Legend />
-              <ReferenceLine y={0} stroke={GRAY900} strokeDasharray="2 2" />
-              <Line type="monotone" dataKey="Cumulative Revenue" stroke={BLUE} strokeWidth={2} dot={{ r:3 }} />
-              <Line type="monotone" dataKey="Cumulative Cost" stroke={RED} strokeWidth={2} dot={{ r:3 }} />
-              <Line type="monotone" dataKey="Cumulative Margin" stroke={GREEN} strokeWidth={2.5} dot={{ r:4 }} />
-            </LineChart>
+              <Bar dataKey="Current" fill={BLUE} />
+              <Bar dataKey="Model A" fill={TEAL} />
+              <Bar dataKey="Model B" fill={PURPLE} />
+              <Bar dataKey="Costs" fill={RED} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
-      {/* Detailed Table */}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Year-by-Year Detail</div>
+      {/* Detail table */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Year-by-Year Detail ({s.forecastModel==='a'?'Model A':s.forecastModel==='b'?'Model B':'Current'})</div>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
               <tr style={{ background:GRAY50 }}>
                 <th style={{ ...thS, textAlign:'left' }}>Metric</th>
-                {years.map(y => <th key={y.year} style={thS}>{y.label}</th>)}
+                {years.map(y=><th key={y.year} style={thS}>{y.label}</th>)}
                 <th style={{ ...thS, color:BLUE }}>5-Yr Total</th>
               </tr>
             </thead>
             <tbody>
               <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Partners</td>
-                {years.map(y => <td key={y.year} style={tdS}>{y.partners}</td>)}
-                <td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>New IPP Instructors</td>
-                {years.map(y => <td key={y.year} style={tdS}>{y.newIPP}</td>)}
-                <td style={tdS}>{years.reduce((s,y)=>s+y.newIPP,0)}</td></tr>
-              <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:600, color:BLUE }}>License Revenue</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.licenseRevenue)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.licenseRevenue,0))}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>IPP Revenue</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.ippRevenue)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.ippRevenue,0))}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Cohort Revenue</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.cohortRevenue)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.cohortRevenue,0))}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Cert + Grant Revenue</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.certRevenue+y.grantRevenue)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.certRevenue+y.grantRevenue,0))}</td></tr>
-              <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:BLUE }}>Total Revenue</td>
-                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(y.totalRevenue)}</td>)}
+                {years.map(y=><td key={y.year} style={tdS}>{y.partners}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:BLUE }}>Revenue</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(y.chosenRev)}</td>)}
                 <td style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(yr5.cumRevenue)}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Fixed Costs</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.fixedCost)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.fixedCost,0))}</td></tr>
-              {years.some(y=>y.reaccredSpike>0) && <tr style={{ background:'#fffbeb' }}><td style={{ ...tdS, textAlign:'left', fontWeight:600, color:AMBER }}>{'\u26A0'} Reaccreditation (included above)</td>
-                {years.map(y => <td key={y.year} style={{ ...tdS, color:y.reaccredSpike>0?AMBER:GRAY400 }}>{y.reaccredSpike>0?fmt(y.reaccredSpike):'\u2014'}</td>)}
-                <td style={{ ...tdS, fontWeight:700, color:AMBER }}>{fmt(years.reduce((s,y)=>s+y.reaccredSpike,0))}</td></tr>}
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Variable Costs</td>
-                {years.map(y => <td key={y.year} style={tdS}>{fmt(y.variableCost)}</td>)}
-                <td style={{ ...tdS, fontWeight:700 }}>{fmt(years.reduce((s,y)=>s+y.variableCost,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Current Model Rev</td>
+                {years.map(y=><td key={y.year} style={tdS}>{fmt(y.currentRev)}</td>)}
+                <td style={{ ...tdS, fontWeight:600 }}>{fmt(years.reduce((s,y)=>s+y.currentRev,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Model A Rev</td>
+                {years.map(y=><td key={y.year} style={tdS}>{fmt(y.maRev)}</td>)}
+                <td style={{ ...tdS, fontWeight:600 }}>{fmt(years.reduce((s,y)=>s+y.maRev,0))}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Model B Rev</td>
+                {years.map(y=><td key={y.year} style={tdS}>{fmt(y.mbRev)}</td>)}
+                <td style={{ ...tdS, fontWeight:600 }}>{fmt(years.reduce((s,y)=>s+y.mbRev,0))}</td></tr>
               <tr style={{ background:'#fef2f2' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:RED }}>Total Cost</td>
-                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, color:RED }}>{fmt(y.totalCost)}</td>)}
+                {years.map(y=><td key={y.year} style={{ ...tdS, fontWeight:700, color:RED }}>{fmt(y.totalCost)}</td>)}
                 <td style={{ ...tdS, fontWeight:700, color:RED }}>{fmt(yr5.cumCost)}</td></tr>
+              {years.some(y=>y.reaccredSpike>0) && <tr style={{ background:'#fffbeb' }}><td style={{ ...tdS, textAlign:'left', fontWeight:600, color:AMBER }}>Reaccreditation</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:y.reaccredSpike>0?AMBER:GRAY400 }}>{y.reaccredSpike>0?fmt(y.reaccredSpike):'\u2014'}</td>)}
+                <td style={{ ...tdS, fontWeight:700, color:AMBER }}>{fmt(years.reduce((s,y)=>s+y.reaccredSpike,0))}</td></tr>}
               <tr style={{ background:yr5.cumMargin>=0?'#f0fdf4':'#fef2f2' }}>
                 <td style={{ ...tdS, textAlign:'left', fontWeight:700, fontSize:13, color:yr5.cumMargin>=0?GREEN:RED }}>Net Margin</td>
-                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, fontSize:13, color:y.netMargin>=0?GREEN:RED }}>{fmt(y.netMargin)}</td>)}
+                {years.map(y=><td key={y.year} style={{ ...tdS, fontWeight:700, fontSize:13, color:y.netMargin>=0?GREEN:RED }}>{fmt(y.netMargin)}</td>)}
                 <td style={{ ...tdS, fontWeight:700, fontSize:13, color:yr5.cumMargin>=0?GREEN:RED }}>{fmt(yr5.cumMargin)}</td></tr>
               <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Margin %</td>
-                {years.map(y => <td key={y.year} style={{ ...tdS, color:y.marginPct>=0?GREEN:RED }}>{pct(y.marginPct)}</td>)}
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:y.marginPct>=0?GREEN:RED }}>{pct(y.marginPct)}</td>)}
                 <td style={{ ...tdS, color:yr5.cumRevenue>0&&yr5.cumMargin/yr5.cumRevenue>=0?GREEN:RED }}>{pct(yr5.cumRevenue>0?yr5.cumMargin/yr5.cumRevenue:0)}</td></tr>
-              <tr style={{ borderTop:'2px solid '+GRAY200 }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:GRAY900 }}>Cumulative Margin</td>
-                {years.map(y => <td key={y.year} style={{ ...tdS, fontWeight:700, color:y.cumMargin>=0?GREEN:RED }}>{fmt(y.cumMargin)}</td>)}
+              <tr style={{ borderTop:'2px solid '+GRAY200 }}><td style={{ ...tdS, textAlign:'left', fontWeight:700 }}>Cumulative Margin</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, fontWeight:700, color:y.cumMargin>=0?GREEN:RED }}>{fmt(y.cumMargin)}</td>)}
                 <td style={tdS}>{'\u2014'}</td></tr>
             </tbody>
           </table>
-        </div>
-      </Card>
-
-      {/* Partner Growth Chart */}
-      <Card>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Partner Base Growth</div>
-        <div style={{ width:'100%', height:220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={years.map(y=>({ name:y.label, Partners:y.partners, 'New IPP':y.newIPP }))} margin={{ top:5,right:20,bottom:5,left:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
-              <XAxis dataKey="name" fontSize={11} />
-              <YAxis fontSize={11} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="Partners" fill={BLUE} radius={[4,4,0,0]} />
-              <Bar dataKey="New IPP" fill={TEAL} radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8 }}>
-          Partner base = (prior year {'\u00D7'} renewal rate) + new partners from pipeline. New IPP grows at {state.pipelineGrowth}%/yr.
         </div>
       </Card>
     </div>
