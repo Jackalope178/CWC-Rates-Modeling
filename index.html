@@ -18,6 +18,7 @@ input[type="range"]{accent-color:#1d4ed8}
 <script>window.PropTypes = window.PropTypes || propTypes;</script>
 <script src="https://unpkg.com/recharts@2.15.0/umd/Recharts.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -31,6 +32,36 @@ const {
 // Design Tokens
 const BLUE='#1d4ed8',TEAL='#0891b2',PURPLE='#7c3aed',GREEN='#16a34a',RED='#ef4444',ORANGE='#f97316',AMBER='#f59e0b';
 const GRAY50='#f9fafb',GRAY100='#f3f4f6',GRAY200='#e5e7eb',GRAY400='#9ca3af',GRAY500='#6b7280',GRAY700='#374151',GRAY900='#111827';
+
+// ═══ SUPABASE ═══
+const SUPABASE_URL = 'https://uihhlmyydgfyrlbdpmuw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_vZcp96bKAMJMRBtNTDfSsg_YoWFC1vJ';
+const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+async function loadSaves() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('saved_states').select('id, name, updated_at').order('updated_at', { ascending: false });
+  return error ? [] : data;
+}
+async function loadState(id) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('saved_states').select('state').eq('id', id).single();
+  return error ? null : data.state;
+}
+async function saveState(name, state, existingId) {
+  if (!supabase) return null;
+  if (existingId) {
+    const { data, error } = await supabase.from('saved_states').update({ state, updated_at: new Date().toISOString() }).eq('id', existingId).select().single();
+    return error ? null : data;
+  }
+  const { data, error } = await supabase.from('saved_states').insert({ name, state }).select().single();
+  return error ? null : data;
+}
+async function deleteSave(id) {
+  if (!supabase) return false;
+  const { error } = await supabase.from('saved_states').delete().eq('id', id);
+  return !error;
+}
 
 const TIERS = [
   { label: '1 instructor',   instructors: 1,  fee: 4050  },
@@ -147,6 +178,61 @@ function App() {
   const [showFormulas, setShowFormulas] = useState(false);
   const [sensitivityOverlay, setSensitivityOverlay] = useState('None');
   const [sensitivityLens, setSensitivityLens] = useState(false);
+  const [saves, setSaves] = useState([]);
+  const [currentSaveId, setCurrentSaveId] = useState(null);
+  const [currentSaveName, setCurrentSaveName] = useState('');
+  const [saveStatus, setSaveStatus] = useState('');
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [newSaveName, setNewSaveName] = useState('');
+
+  // Load saved states list on mount
+  useEffect(() => { loadSaves().then(setSaves); }, []);
+
+  // Auto-save debounce: save to current slot 2s after last change
+  const saveTimerRef = React.useRef(null);
+  useEffect(() => {
+    if (!currentSaveId) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      await saveState(null, state, currentSaveId);
+      setSaveStatus('Auto-saved');
+      setTimeout(() => setSaveStatus(''), 2000);
+    }, 2000);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [state, currentSaveId]);
+
+  const handleSaveNew = async () => {
+    const name = newSaveName.trim() || ('Save ' + new Date().toLocaleDateString());
+    const result = await saveState(name, state, null);
+    if (result) {
+      setCurrentSaveId(result.id);
+      setCurrentSaveName(name);
+      setSaveStatus('Saved!');
+      setTimeout(() => setSaveStatus(''), 2000);
+      setSaves(await loadSaves());
+    }
+    setShowSaveDialog(false);
+    setNewSaveName('');
+  };
+
+  const handleLoad = async (id) => {
+    const loaded = await loadState(id);
+    if (loaded) {
+      setState({ ...defaults, ...loaded });
+      setCurrentSaveId(id);
+      const s = saves.find(s => s.id === id);
+      setCurrentSaveName(s ? s.name : '');
+      setSaveStatus('Loaded');
+      setTimeout(() => setSaveStatus(''), 2000);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (await deleteSave(id)) {
+      if (currentSaveId === id) { setCurrentSaveId(null); setCurrentSaveName(''); }
+      setSaves(await loadSaves());
+    }
+  };
 
   const set = useCallback((key, val) => setState(prev => ({ ...prev, [key]: val })), []);
   const setPartnerCount = useCallback((idx, val) => setState(prev => {
@@ -373,8 +459,67 @@ function App() {
   return (
     <div style={{ minHeight:'100vh', background:GRAY100, fontFamily:"'Inter',sans-serif" }}>
       <div style={{ background:'white', borderBottom:'1.5px solid '+GRAY200, padding:'16px 24px' }}>
-        <h1 style={{ fontSize:20, fontWeight:700, color:GRAY900, margin:0 }}>CWC Fee Strategy Model</h1>
-        <p style={{ fontSize:12, color:GRAY500, margin:'2px 0 0' }}>Internal planning tool — model pricing, costs, and revenue scenarios</p>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
+          <div>
+            <h1 style={{ fontSize:20, fontWeight:700, color:GRAY900, margin:0 }}>CWC Fee Strategy Model</h1>
+            <p style={{ fontSize:12, color:GRAY500, margin:'2px 0 0' }}>
+              Internal planning tool — model pricing, costs, and revenue scenarios
+              {currentSaveName && <span style={{ color:BLUE, fontWeight:600 }}> — {currentSaveName}</span>}
+              {saveStatus && <span style={{ color:GREEN, marginLeft:8 }}>{saveStatus}</span>}
+            </p>
+          </div>
+          <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+            {/* Save current */}
+            {currentSaveId ? (
+              <button onClick={async () => { await saveState(null, state, currentSaveId); setSaveStatus('Saved!'); setTimeout(()=>setSaveStatus(''),2000); setSaves(await loadSaves()); }}
+                style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+                Save
+              </button>
+            ) : null}
+            {/* Save As */}
+            <button onClick={() => setShowSaveDialog(true)}
+              style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+BLUE, background:BLUE, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              Save As
+            </button>
+            {/* Load dropdown */}
+            {saves.length > 0 && (
+              <select onChange={e => { if (e.target.value) handleLoad(e.target.value); e.target.value = ''; }}
+                defaultValue="" style={{ padding:'6px 8px', fontSize:12, border:'1px solid '+GRAY200, borderRadius:6, color:GRAY700, fontFamily:"'Inter',sans-serif" }}>
+                <option value="" disabled>Load save...</option>
+                {saves.map(s => <option key={s.id} value={s.id}>{s.name} — {new Date(s.updated_at).toLocaleDateString()}</option>)}
+              </select>
+            )}
+            {/* Delete current */}
+            {currentSaveId && (
+              <button onClick={() => { if (confirm('Delete "'+currentSaveName+'"?')) handleDelete(currentSaveId); }}
+                style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+RED, background:'white', color:RED, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+                Delete
+              </button>
+            )}
+            {/* Reset to defaults */}
+            <button onClick={() => { setState({...defaults}); setCurrentSaveId(null); setCurrentSaveName(''); }}
+              style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              Reset
+            </button>
+          </div>
+        </div>
+        {/* Save As dialog */}
+        {showSaveDialog && (
+          <div style={{ marginTop:12, display:'flex', gap:8, alignItems:'center' }}>
+            <input type="text" placeholder="Name this save..." value={newSaveName} onChange={e => setNewSaveName(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter') handleSaveNew(); }}
+              style={{ flex:1, maxWidth:300, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" }}
+              autoFocus />
+            <button onClick={handleSaveNew}
+              style={{ padding:'6px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'none', background:GREEN, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              Save
+            </button>
+            <button onClick={() => { setShowSaveDialog(false); setNewSaveName(''); }}
+              style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ display:'flex', gap:12, padding:'16px 24px', flexWrap:'wrap', position:'sticky', top:0, zIndex:10, background:GRAY100 }}>
