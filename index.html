@@ -197,7 +197,7 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
-const TABS = ['Current State','What If','5-Year Outlook'];
+const TABS = ['Current State','What If','5-Year Outlook','Break-Even Analysis'];
 
 // ═══ MAIN APP ═══
 function App() {
@@ -473,6 +473,7 @@ function App() {
         {activeTab==='Current State' && <CurrentStateTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
         {activeTab==='What If' && <WhatIfTab state={state} calc={calc} set={set} whatIfModel={whatIfModel} setWhatIfModel={setWhatIfModel} />}
         {activeTab==='5-Year Outlook' && <OutlookTab state={state} calc={calc} forecast={forecast} set={set} />}
+        {activeTab==='Break-Even Analysis' && <BreakEvenTab state={state} calc={calc} />}
       </div>
 
       <div style={{ textAlign:'center', padding:'24px 0', fontSize:11, color:GRAY400 }}>
@@ -944,6 +945,283 @@ function OutlookTab({ state, calc, forecast, set }) {
                 <td style={tdS}>{'\u2014'}</td></tr>
             </tbody>
           </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ═══ BREAK-EVEN ANALYSIS TAB ═══
+function BreakEvenTab({ state, calc }) {
+  const s = state;
+
+  // Run Monte Carlo: vary partners, cohorts/org, and pctActive across ranges
+  // For each model, find what combination breaks even over 5 years
+  const analysis = useMemo(() => {
+    const grantBase = (s.funders||[]).reduce((sum,f)=>sum+(f.amount||0),0);
+    const results = { current: [], modelA: [], modelB: [] };
+
+    // Simulate across partner counts (1-30) and cohorts per org (1-6)
+    for (let partners = 1; partners <= 30; partners++) {
+      for (let cohPerOrg = 1; cohPerOrg <= 6; cohPerOrg++) {
+        let cumCurrent=0, cumA=0, cumB=0, cumCost=0;
+        let p = partners;
+
+        for (let yr = 0; yr < 5; yr++) {
+          const feeEsc = Math.pow(1+s.feeEscalation/100, yr);
+          const costInf = Math.pow(1+s.costInflation/100, yr);
+          const varCostInf = Math.pow(1+s.variableCostInflation/100, yr);
+          const staffInf = Math.pow(1+s.staffRaiseRate/100, yr);
+          const pipeGrow = Math.pow(1+s.pipelineGrowth/100, yr);
+          const grantGrow = Math.pow(1+s.grantGrowthRate/100, yr);
+          const calYear = s.forecastStartYear + yr;
+          const isReaccred = calYear === s.reaccredYear;
+
+          if (yr > 0) { p = Math.round(p*(s.renewalRate/100)) + Math.round(s.newIPPInstructors*pipeGrow*(s.pctIPPtoLicense/100)); }
+          const newIPP = Math.round(s.newIPPInstructors*pipeGrow);
+          const effP = p*(s.renewalRate/100)*(1-s.dormantRate/100);
+          const actOrgs = effP*(s.pctLicenseToActive/100);
+          const cohorts = actOrgs*cohPerOrg;
+          const participants = cohorts*s.avgParticipants;
+          const ippRev = newIPP*s.feeIPP;
+          const grantRev = grantBase*grantGrow;
+
+          // Current
+          const currLic = p*s.tierFees[0]*feeEsc;
+          const currCoh = cohorts*s.feeCohort*feeEsc;
+          const currCert = Math.max(0,participants-p*15)*s.feeCertOverage;
+          cumCurrent += currLic+currCoh+currCert+ippRev+grantRev;
+
+          // Model A
+          const maSmall = Math.round(cohorts*(s.modelA_pctSmall/100));
+          const maLarge = Math.round(cohorts*(1-s.modelA_pctSmall/100));
+          cumA += p*s.modelA_annualFee*feeEsc + maSmall*s.modelA_smallCohortFee*feeEsc + maLarge*s.modelA_largeCohortFee*feeEsc + ippRev + grantRev;
+
+          // Model B
+          const mbSt=Math.round(p*(s.modelB_pctStarter/100));
+          const mbSd=Math.round(p*(s.modelB_pctStandard/100));
+          const mbGr=p-mbSt-mbSd;
+          cumB += (mbSt*s.modelB_starterFee+mbSd*s.modelB_standardFee+mbGr*s.modelB_growthFee)*feeEsc + ippRev + grantRev;
+
+          // Cost
+          const accred = s.costAccreditation*costInf+(isReaccred?s.reaccredCost:0);
+          const fixed = s.costStaff*staffInf+s.costLMS*costInf+accred+s.costSystems*costInf;
+          cumCost += fixed+newIPP*s.costPerIPP*varCostInf+cohorts*s.costPerCohort*varCostInf+participants*s.costPerCert*varCostInf;
+        }
+
+        const entry = { partners, cohPerOrg, cumCost };
+        results.current.push({ ...entry, cumRev: cumCurrent, margin: cumCurrent-cumCost });
+        results.modelA.push({ ...entry, cumRev: cumA, margin: cumA-cumCost });
+        results.modelB.push({ ...entry, cumRev: cumB, margin: cumB-cumCost });
+      }
+    }
+    return results;
+  }, [state]);
+
+  // Find break-even points for each model
+  const findBreakEven = (data) => {
+    const byPartners = {};
+    data.forEach(d => {
+      if (!byPartners[d.partners]) byPartners[d.partners] = [];
+      byPartners[d.partners].push(d);
+    });
+    // For each partner count, find min cohorts/org to break even
+    const breakPoints = [];
+    for (let p = 1; p <= 30; p++) {
+      const runs = byPartners[p] || [];
+      const beRun = runs.find(r => r.margin >= 0);
+      breakPoints.push({ partners: p, cohPerOrg: beRun ? beRun.cohPerOrg : null, margin: beRun ? beRun.margin : runs.length > 0 ? runs[runs.length-1].margin : 0 });
+    }
+    return breakPoints;
+  };
+
+  const currentBE = useMemo(() => findBreakEven(analysis.current), [analysis]);
+  const modelABE = useMemo(() => findBreakEven(analysis.modelA), [analysis]);
+  const modelBBE = useMemo(() => findBreakEven(analysis.modelB), [analysis]);
+
+  // Chart: 5-year margin by partner count (at current cohorts/org setting)
+  const marginByPartners = useMemo(() => {
+    const arr = [];
+    for (let p = 1; p <= 30; p++) {
+      const currEntry = analysis.current.find(d => d.partners===p && d.cohPerOrg===s.cohortsPerOrg);
+      const maEntry = analysis.modelA.find(d => d.partners===p && d.cohPerOrg===s.cohortsPerOrg);
+      const mbEntry = analysis.modelB.find(d => d.partners===p && d.cohPerOrg===s.cohortsPerOrg);
+      arr.push({
+        partners: p,
+        Current: currEntry ? Math.round(currEntry.margin) : 0,
+        'Model A': maEntry ? Math.round(maEntry.margin) : 0,
+        'Model B': mbEntry ? Math.round(mbEntry.margin) : 0,
+      });
+    }
+    return arr;
+  }, [analysis, s.cohortsPerOrg]);
+
+  // Heatmap data: for selected model, margin by partners x cohorts/org
+  const [heatModel, setHeatModel] = useState('current');
+  const heatData = useMemo(() => {
+    const src = heatModel==='a' ? analysis.modelA : heatModel==='b' ? analysis.modelB : analysis.current;
+    const grid = [];
+    for (let coh = 1; coh <= 6; coh++) {
+      const row = { cohorts: coh+'/yr' };
+      for (let p = 2; p <= 30; p += 2) {
+        const entry = src.find(d => d.partners===p && d.cohPerOrg===coh);
+        row['p'+p] = entry ? Math.round(entry.margin) : 0;
+      }
+      grid.push(row);
+    }
+    return grid;
+  }, [analysis, heatModel]);
+
+  const firstBE = (data) => data.find(d => d.cohPerOrg !== null);
+  const currFirst = firstBE(currentBE);
+  const maFirst = firstBE(modelABE);
+  const mbFirst = firstBE(modelBBE);
+
+  return (
+    <div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>
+        How many partners and cohorts does each pricing model need to break even over 5 years?
+        Simulates all combinations of partner counts (1-30) and cohorts/org (1-6).
+      </div>
+
+      {/* Break-even summary cards */}
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+        <Card style={{ flex:'1 1 250px', background:GRAY50 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:BLUE, marginBottom:8 }}>Current Model</div>
+          {currFirst ? (
+            <div>
+              <div style={{ fontSize:12 }}>Minimum to break even (5yr):</div>
+              <div style={{ fontSize:20, fontWeight:700, color:BLUE }}>{currFirst.partners} partners</div>
+              <div style={{ fontSize:12, color:GRAY500 }}>at {currFirst.cohPerOrg} cohort{currFirst.cohPerOrg>1?'s':''}/org/yr</div>
+              <div style={{ fontSize:12, color:GREEN, fontWeight:600, marginTop:4 }}>5yr margin: {fmt(currFirst.margin)}</div>
+            </div>
+          ) : <div style={{ fontSize:14, fontWeight:700, color:RED }}>Does not break even at 30 partners</div>}
+        </Card>
+        <Card style={{ flex:'1 1 250px', background:'#f0fdfa' }}>
+          <div style={{ fontSize:13, fontWeight:700, color:TEAL, marginBottom:8 }}>Model A: Per-Cohort</div>
+          {maFirst ? (
+            <div>
+              <div style={{ fontSize:12 }}>Minimum to break even (5yr):</div>
+              <div style={{ fontSize:20, fontWeight:700, color:TEAL }}>{maFirst.partners} partners</div>
+              <div style={{ fontSize:12, color:GRAY500 }}>at {maFirst.cohPerOrg} cohort{maFirst.cohPerOrg>1?'s':''}/org/yr</div>
+              <div style={{ fontSize:12, color:GREEN, fontWeight:600, marginTop:4 }}>5yr margin: {fmt(maFirst.margin)}</div>
+            </div>
+          ) : <div style={{ fontSize:14, fontWeight:700, color:RED }}>Does not break even at 30 partners</div>}
+        </Card>
+        <Card style={{ flex:'1 1 250px', background:'#faf5ff' }}>
+          <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:8 }}>Model B: Packages</div>
+          {mbFirst ? (
+            <div>
+              <div style={{ fontSize:12 }}>Minimum to break even (5yr):</div>
+              <div style={{ fontSize:20, fontWeight:700, color:PURPLE }}>{mbFirst.partners} partners</div>
+              <div style={{ fontSize:12, color:GRAY500 }}>at {mbFirst.cohPerOrg} cohort{mbFirst.cohPerOrg>1?'s':''}/org/yr</div>
+              <div style={{ fontSize:12, color:GREEN, fontWeight:600, marginTop:4 }}>5yr margin: {fmt(mbFirst.margin)}</div>
+            </div>
+          ) : <div style={{ fontSize:14, fontWeight:700, color:RED }}>Does not break even at 30 partners</div>}
+        </Card>
+      </div>
+
+      {/* 5-year margin by partner count */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>5-Year Cumulative Margin by Partner Count</div>
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:8 }}>At {s.cohortsPerOrg} cohort{s.cohortsPerOrg>1?'s':''} per org/yr (change in Current State tab)</div>
+        <div style={{ width:'100%', height:320 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={marginByPartners} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="partners" label={{ value:'# Partners', position:'insideBottom', offset:-2, fontSize:11 }} fontSize={11} />
+              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+              <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+' partners'} />
+              <Legend />
+              <ReferenceLine y={0} stroke={RED} strokeDasharray="4 4" label={{ value:'Break-Even', position:'right', fontSize:11, fill:RED }} />
+              <Line type="monotone" dataKey="Current" stroke={BLUE} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Model A" stroke={TEAL} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Model B" stroke={PURPLE} strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* Break-even heatmap */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Break-Even Heatmap: 5-Year Margin</div>
+          <div style={{ display:'flex', gap:6 }}>
+            {[{k:'current',l:'Current',c:BLUE},{k:'a',l:'Model A',c:TEAL},{k:'b',l:'Model B',c:PURPLE}].map(o=>(
+              <button key={o.k} onClick={()=>setHeatModel(o.k)} style={{
+                padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px solid '+(heatModel===o.k?o.c:GRAY200),
+                background:heatModel===o.k?o.c:'white', color:heatModel===o.k?'white':GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
+              }}>{o.l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
+            <thead>
+              <tr>
+                <th style={{ padding:'6px 8px', fontSize:11, fontWeight:700, color:GRAY700, borderBottom:'2px solid '+GRAY200, textAlign:'left' }}>Cohorts/Org</th>
+                {[2,4,6,8,10,12,14,16,18,20,22,24,26,28,30].map(p=>(
+                  <th key={p} style={{ padding:'6px 4px', fontSize:11, fontWeight:700, color:GRAY700, borderBottom:'2px solid '+GRAY200, textAlign:'center' }}>{p}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {heatData.map((row,i) => (
+                <tr key={i}>
+                  <td style={{ padding:'6px 8px', fontSize:12, fontWeight:600, borderBottom:'1px solid '+GRAY100 }}>{row.cohorts}</td>
+                  {[2,4,6,8,10,12,14,16,18,20,22,24,26,28,30].map(p=>{
+                    const val = row['p'+p] || 0;
+                    const bg = val >= 0 ? 'rgba(22,163,74,'+(Math.min(Math.abs(val)/50000,1)*0.4+0.1)+')' : 'rgba(239,68,68,'+(Math.min(Math.abs(val)/50000,1)*0.4+0.1)+')';
+                    return <td key={p} style={{ padding:'4px', fontSize:11, textAlign:'center', borderBottom:'1px solid '+GRAY100, background:bg, color:val>=0?'#166534':'#991b1b', fontWeight:600 }}>{val>=0?fmt(val):fmt(val)}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display:'flex', gap:16, marginTop:8, fontSize:11, color:GRAY500 }}>
+          <span><span style={{ display:'inline-block', width:12, height:12, background:'rgba(22,163,74,0.3)', borderRadius:2, marginRight:4, verticalAlign:'middle' }}></span>Profitable (green = higher margin)</span>
+          <span><span style={{ display:'inline-block', width:12, height:12, background:'rgba(239,68,68,0.3)', borderRadius:2, marginRight:4, verticalAlign:'middle' }}></span>Losing money (red = deeper loss)</span>
+        </div>
+      </Card>
+
+      {/* Break-even table */}
+      <Card>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Minimum Partners to Break Even (5-Year)</div>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:GRAY50 }}>
+                <th style={{ padding:'8px 10px', fontSize:12, fontWeight:700, color:GRAY700, borderBottom:'2px solid '+GRAY200, textAlign:'left' }}>Cohorts/Org/Yr</th>
+                <th style={{ padding:'8px 10px', fontSize:12, fontWeight:700, color:BLUE, borderBottom:'2px solid '+GRAY200, textAlign:'center' }}>Current</th>
+                <th style={{ padding:'8px 10px', fontSize:12, fontWeight:700, color:TEAL, borderBottom:'2px solid '+GRAY200, textAlign:'center' }}>Model A</th>
+                <th style={{ padding:'8px 10px', fontSize:12, fontWeight:700, color:PURPLE, borderBottom:'2px solid '+GRAY200, textAlign:'center' }}>Model B</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[1,2,3,4,5,6].map(coh => {
+                const findMin = (data) => {
+                  for (let p=1; p<=30; p++) {
+                    const entry = data.find(d=>d.partners===p && d.cohPerOrg===coh);
+                    if (entry && entry.margin>=0) return { partners:p, margin:entry.margin };
+                  }
+                  return null;
+                };
+                const curr=findMin(analysis.current), ma=findMin(analysis.modelA), mb=findMin(analysis.modelB);
+                return (
+                  <tr key={coh} style={{ background:coh%2===0?GRAY50:'white' }}>
+                    <td style={{ padding:'8px 10px', fontSize:13, fontWeight:600, borderBottom:'1px solid '+GRAY100 }}>{coh} cohort{coh>1?'s':''}/yr</td>
+                    <td style={{ padding:'8px 10px', fontSize:13, fontWeight:700, textAlign:'center', borderBottom:'1px solid '+GRAY100, color:curr?GREEN:RED }}>{curr?curr.partners+' partners':'30+'}</td>
+                    <td style={{ padding:'8px 10px', fontSize:13, fontWeight:700, textAlign:'center', borderBottom:'1px solid '+GRAY100, color:ma?GREEN:RED }}>{ma?ma.partners+' partners':'30+'}</td>
+                    <td style={{ padding:'8px 10px', fontSize:13, fontWeight:700, textAlign:'center', borderBottom:'1px solid '+GRAY100, color:mb?GREEN:RED }}>{mb?mb.partners+' partners':'30+'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8 }}>
+          All simulations use your current cost structure, fee escalation ({s.feeEscalation}%/yr), cost inflation ({s.costInflation}%/yr), pipeline growth ({s.pipelineGrowth}%/yr), and reaccreditation in {s.reaccredYear}.
         </div>
       </Card>
     </div>
