@@ -77,22 +77,44 @@ const TIERS = [
   { label: '10 instructors', instructors: 10, fee: 22750 },
 ];
 
+const PROGRAM_AREAS = ['Accreditation & Governance','Program Administration','Instructor Support','IPP','Outreach & Marketing'];
+const SUB_CATEGORIES = ['Staff time','Fees','Contractual','Systems','Travel'];
+
+const DEFAULT_BUDGET_LINES = [
+  // Accreditation & Governance — $40,425
+  { id: 1,  programArea:'Accreditation & Governance', subCategory:'Staff time',   detail:'ANSI reporting',                 amount:22210 },
+  { id: 2,  programArea:'Accreditation & Governance', subCategory:'Staff time',   detail:'OSC',                            amount:5215 },
+  { id: 3,  programArea:'Accreditation & Governance', subCategory:'Fees',         detail:'ANSI Annual Fee',                amount:3000 },
+  { id: 4,  programArea:'Accreditation & Governance', subCategory:'Fees',         detail:'ANSI Audit cost',                amount:10000 },
+  { id: 5,  programArea:'Accreditation & Governance', subCategory:'Contractual',  detail:'Lawyer',                         amount:0 },
+  // Program Administration — $42,789
+  { id: 6,  programArea:'Program Administration',     subCategory:'Staff time',   detail:'Meetings, oversight, tracking, budgeting', amount:32465 },
+  { id: 7,  programArea:'Program Administration',     subCategory:'Staff time',   detail:'Maintenance, data system updates',         amount:10180 },
+  { id: 8,  programArea:'Program Administration',     subCategory:'Systems',      detail:'Airtable (DMS)',                 amount:144 },
+  // Instructor Support — $14,825
+  { id: 9,  programArea:'Instructor Support',         subCategory:'Staff time',   detail:'Cohort doc review, debrief, support, license, certs', amount:8600 },
+  { id: 10, programArea:'Instructor Support',         subCategory:'Staff time',   detail:'Instructor Network',             amount:6225 },
+  // IPP — $10,934
+  { id: 11, programArea:'IPP',                         subCategory:'Staff time',   detail:'IPP onboarding, enrollment, reviews',     amount:10340 },
+  { id: 12, programArea:'IPP',                         subCategory:'Systems',      detail:'Thinkific (LMS)',                amount:594 },
+  // Outreach & Marketing — $5,890
+  { id: 13, programArea:'Outreach & Marketing',       subCategory:'Staff time',   detail:'Interest meetings, website updates, presentations', amount:5780 },
+  { id: 14, programArea:'Outreach & Marketing',       subCategory:'Travel',       detail:'SBN conference',                 amount:110 },
+];
+
 const defaults = {
   // --- CURRENT STATE: partners ---
   partnerCounts: [5, 0, 0, 0, 0, 0, 0],
   tierFees: [4050, 6800, 9000, 11310, 13120, 14940, 22750],
   customTiers: [],
   // --- CURRENT STATE: costs ---
-  costStaff: 20000, costLMS: 600, costAccreditation: 3000, costSystems: 500,
+  budgetLines: DEFAULT_BUDGET_LINES,
+  subCategoryMarkups: { 'Staff time':5, 'Fees':3, 'Contractual':3, 'Systems':3, 'Travel':3 },
   costPerIPP: 400, costPerCohort: 300, costPerCert: 10,
   // --- CURRENT STATE: revenue ---
   feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
   funders: [],
-
-  // --- FULL PROGRAM COSTS tab ---
-  costGovernance: 0, costProgramAdmin: 0, costInstructorSupport: 0, costOutreach: 0,
-  additionalFixedCosts: [],       // [{ id, label, amount }]
-  programFunderSupports: [],      // [{ id, name, amount }] — offsets on Full Program Costs view (separate from revenue-side funders[])
+  programFunderSupports: [],      // [{ id, name, amount }] — cost offsets
   // --- CURRENT STATE: pipeline ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
@@ -122,9 +144,7 @@ const defaults = {
   modelB_pilotConvertPct: 70,
   // --- FORECAST ---
   feeEscalation: 3,
-  costInflation: 3,
   variableCostInflation: 2,
-  staffRaiseRate: 5,
   reaccredCost: 30000,
   reaccredYear: 2029,
   forecastStartYear: 2025,
@@ -132,6 +152,34 @@ const defaults = {
   grantGrowthRate: 0,
   forecastModel: 'current',
 };
+
+// Migration: convert legacy flat cost fields to budget lines for older saved scenarios.
+function migrateState(loaded) {
+  if (!loaded || typeof loaded !== 'object') return loaded;
+  if (Array.isArray(loaded.budgetLines) && loaded.budgetLines.length > 0) return loaded;
+  const out = { ...loaded };
+  const lines = [];
+  let id = 1;
+  const push = (programArea, subCategory, detail, amount) => {
+    if ((Number(amount)||0) !== 0) lines.push({ id: id++, programArea, subCategory, detail, amount: Number(amount) });
+  };
+  push('Program Administration',     'Staff time', 'Staff base time',   loaded.costStaff);
+  push('IPP',                         'Systems',    'LMS (Thinkific)',   loaded.costLMS);
+  push('Accreditation & Governance', 'Fees',       'Accreditation / ANSI', loaded.costAccreditation);
+  push('Program Administration',     'Systems',    'Airtable / systems', loaded.costSystems);
+  push('Accreditation & Governance', 'Staff time', 'Governance staff',  loaded.costGovernance);
+  push('Program Administration',     'Staff time', 'Program admin staff', loaded.costProgramAdmin);
+  push('Instructor Support',         'Staff time', 'Instructor support staff', loaded.costInstructorSupport);
+  push('Outreach & Marketing',       'Staff time', 'Outreach staff',    loaded.costOutreach);
+  (loaded.additionalFixedCosts||[]).forEach(r => push('Program Administration','Fees', r.label||'Additional fixed cost', r.amount));
+  if (lines.length === 0) lines.push(...DEFAULT_BUDGET_LINES);
+  out.budgetLines = lines;
+  if (!out.subCategoryMarkups) out.subCategoryMarkups = { 'Staff time':5,'Fees':3,'Contractual':3,'Systems':3,'Travel':3 };
+  delete out.costStaff; delete out.costLMS; delete out.costAccreditation; delete out.costSystems;
+  delete out.costGovernance; delete out.costProgramAdmin; delete out.costInstructorSupport; delete out.costOutreach;
+  delete out.additionalFixedCosts; delete out.costInflation; delete out.staffRaiseRate;
+  return out;
+}
 
 const fmt = (n) => {
   if (n == null || isNaN(n)) return '$0';
@@ -204,7 +252,7 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
-const TABS = ['Current State','What If','5-Year Outlook','Full Program Costs','Break-Even Analysis'];
+const TABS = ['Current State','What If','5-Year Outlook','Break-Even Analysis'];
 
 // ═══ MAIN APP ═══
 function App() {
@@ -230,7 +278,7 @@ function App() {
         const autosave = allSaves.find(s => s.name === '__autosave__');
         if (autosave) {
           const data = await loadState(autosave.id);
-          if (data) { setState({ ...defaults, ...data }); autosaveIdRef.current = autosave.id; }
+          if (data) { setState({ ...defaults, ...migrateState(data) }); autosaveIdRef.current = autosave.id; }
         }
       } catch(e) {}
       setLoaded(true);
@@ -265,7 +313,7 @@ function App() {
   };
   const handleLoad = async (id) => {
     const data = await loadState(id);
-    if (data) { setState({ ...defaults, ...data }); const s = saves.find(s=>s.id===id); if(s&&s.name!=='__autosave__'){setActiveSaveId(id);setActiveSaveName(s.name);} setSaveStatus('Loaded'); setTimeout(()=>setSaveStatus(''),2000); }
+    if (data) { setState({ ...defaults, ...migrateState(data) }); const s = saves.find(s=>s.id===id); if(s&&s.name!=='__autosave__'){setActiveSaveId(id);setActiveSaveName(s.name);} setSaveStatus('Loaded'); setTimeout(()=>setSaveStatus(''),2000); }
   };
   const handleDelete = async (id) => {
     if (await deleteSave(id)) { if(activeSaveId===id){setActiveSaveId(null);setActiveSaveName('');} setSaves(await loadSaves()); }
@@ -280,7 +328,15 @@ function App() {
   const calc = useMemo(() => {
     const s = state;
     const ct = s.customTiers || [];
-    const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems;
+    const budgetLines = s.budgetLines || [];
+    const fixedTotal = budgetLines.reduce((sum, l) => sum + (Number(l.amount)||0), 0);
+    const budgetByArea = Object.fromEntries(PROGRAM_AREAS.map(a => [a, 0]));
+    const budgetBySubCategory = Object.fromEntries(SUB_CATEGORIES.map(c => [c, 0]));
+    budgetLines.forEach(l => {
+      const amt = Number(l.amount)||0;
+      if (budgetByArea[l.programArea] !== undefined) budgetByArea[l.programArea] += amt;
+      if (budgetBySubCategory[l.subCategory] !== undefined) budgetBySubCategory[l.subCategory] += amt;
+    });
     const totalPartners = s.partnerCounts.reduce((a,b)=>a+b,0) + ct.reduce((a,t)=>a+(t.count||0),0);
     const totalInstructors = s.partnerCounts.reduce((sum,c,i)=>sum+c*TIERS[i].instructors,0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.instructors||0),0);
     const licenseRevenue = s.partnerCounts.reduce((sum,c,i)=>sum+c*s.tierFees[i],0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.fee||0),0);
@@ -303,14 +359,10 @@ function App() {
     const netMargin = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0 ? netMargin/totalRevenue : -1;
 
-    // Full Program Costs (separate roll-up — does NOT feed totalCost/netMargin above)
-    const additionalFixedTotal = (s.additionalFixedCosts||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
-    const programLevelAdditions = (s.costGovernance||0) + (s.costProgramAdmin||0) + (s.costInstructorSupport||0) + (s.costOutreach||0) + additionalFixedTotal;
-    const fullProgramCost = totalCost + programLevelAdditions;
     const funderSupportsTotal = (s.programFunderSupports||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
-    const netProgramCost = fullProgramCost - funderSupportsTotal;
     const variableCostTotal = ippCostTotal + cohortCostTotal + certCostTotal;
-    const fixedGapAfterFunders = fixedTotal + programLevelAdditions - funderSupportsTotal;
+    const fixedGapAfterFunders = fixedTotal - funderSupportsTotal;
+    const netProgramCost = totalCost - funderSupportsTotal;
     const currentContribution = totalRevenue - variableCostTotal;
     const currentNetAfterFunders = currentContribution - fixedGapAfterFunders;
 
@@ -356,11 +408,11 @@ function App() {
     const mbContribution = mbTotalRev - variableCostTotal;
     const mbNetAfterFunders = mbContribution - fixedGapAfterFunders;
 
-    return { fixedTotal, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
+    return { fixedTotal, budgetByArea, budgetBySubCategory, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
       activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
       ippCostTotal, cohortCostTotal, certCostTotal, totalCost, netMargin, marginPct,
-      additionalFixedTotal, programLevelAdditions, fullProgramCost, funderSupportsTotal, netProgramCost,
+      funderSupportsTotal, netProgramCost,
       variableCostTotal, fixedGapAfterFunders, currentContribution, currentNetAfterFunders,
       maSmall, maLarge, maAnnualRev, maCohortRev, maTotalRev, maNetMargin, maPilotDrag, maContribution, maNetAfterFunders,
       mbStarter, mbStandard, mbGrowth, mbPkgRev, mbIncludedCohorts, mbAddOnCohorts, mbAddOnRev, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag, mbContribution, mbNetAfterFunders };
@@ -377,13 +429,16 @@ function App() {
 
     for (let yr=0; yr<5; yr++) {
       const feeEsc = Math.pow(1+s.feeEscalation/100, yr);
-      const costInf = Math.pow(1+s.costInflation/100, yr);
       const varCostInf = Math.pow(1+s.variableCostInflation/100, yr);
-      const staffInf = Math.pow(1+s.staffRaiseRate/100, yr);
       const pipeGrow = Math.pow(1+s.pipelineGrowth/100, yr);
       const grantGrow = Math.pow(1+s.grantGrowthRate/100, yr);
       const calendarYear = s.forecastStartYear + yr;
       const isReaccred = calendarYear === s.reaccredYear;
+      const markups = s.subCategoryMarkups || {};
+      const budgetLinesEsc = (s.budgetLines||[]).reduce((sum, l) => {
+        const rate = markups[l.subCategory] != null ? markups[l.subCategory] : 0;
+        return sum + (Number(l.amount)||0) * Math.pow(1 + rate/100, yr);
+      }, 0);
 
       let partners;
       if (yr===0) partners=startPartners;
@@ -433,8 +488,7 @@ function App() {
       }
 
       // Costs (same for all models)
-      const accredCost = s.costAccreditation*costInf + (isReaccred?s.reaccredCost:0);
-      const fixedTotal = s.costStaff*staffInf + s.costLMS*costInf + accredCost + s.costSystems*costInf;
+      const fixedTotal = budgetLinesEsc + (isReaccred ? s.reaccredCost : 0);
       const ippCost = newIPP*s.costPerIPP*varCostInf;
       const cohortCost = cohorts*s.costPerCohort*varCostInf;
       const certCost = participants*s.costPerCert*varCostInf;
@@ -510,7 +564,6 @@ function App() {
         {activeTab==='Current State' && <CurrentStateTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
         {activeTab==='What If' && <WhatIfTab state={state} calc={calc} set={set} whatIfModel={whatIfModel} setWhatIfModel={setWhatIfModel} />}
         {activeTab==='5-Year Outlook' && <OutlookTab state={state} calc={calc} forecast={forecast} set={set} />}
-        {activeTab==='Full Program Costs' && <FullProgramCostsTab state={state} calc={calc} set={set} />}
         {activeTab==='Break-Even Analysis' && <BreakEvenTab state={state} calc={calc} />}
       </div>
 
@@ -583,19 +636,11 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
           </Card>
         </div>
 
-        {/* RIGHT: Costs + Funders */}
+        {/* RIGHT: Per-Event Costs + Revenue Fees + Funders */}
         <div>
           <Card style={{ marginBottom:16 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Costs</div>
-            <SectionDivider label="Fixed (Annual)" />
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-              <InputField label="Staff" value={state.costStaff} min={0} max={200000} step={500} onChange={v=>set('costStaff',v)} prefix="$" />
-              <InputField label="LMS" value={state.costLMS} min={0} max={10000} step={50} onChange={v=>set('costLMS',v)} prefix="$" />
-              <InputField label="Accreditation / ANSI" value={state.costAccreditation} min={0} max={15000} step={100} onChange={v=>set('costAccreditation',v)} prefix="$" />
-              <InputField label="Airtable + Systems" value={state.costSystems} min={0} max={5000} step={50} onChange={v=>set('costSystems',v)} prefix="$" />
-            </div>
-            <div style={{ fontSize:13, fontWeight:700, textAlign:'right', marginTop:4 }}>Fixed: {fmt(calc.fixedTotal)}</div>
-            <SectionDivider label="Per-Event" />
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Per-Event Costs & Revenue Fees</div>
+            <SectionDivider label="Per-Event Costs" />
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px' }}>
               <InputField label="Per IPP" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" />
               <InputField label="Per Cohort" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" />
@@ -608,7 +653,7 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
             </div>
           </Card>
           <Card>
-            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Funders & Grants</div>
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>Funders & Grants <span style={{ fontSize:11, fontWeight:400, color:GRAY500 }}>(counted as revenue)</span></div>
             {(state.funders||[]).map((f,i) => (
               <div key={i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
                 <input type="text" value={f.name} placeholder="Funder" onChange={e=>{const next=[...state.funders];next[i]={...next[i],name:e.target.value};set('funders',next);}} style={{ flex:1, padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 }} />
@@ -621,7 +666,119 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
           </Card>
         </div>
       </div>
+
+      {/* PROGRAM BUDGET */}
+      <ProgramBudgetSection state={state} calc={calc} set={set} />
+
+      {/* FUNDER SUPPORTS (COST OFFSETS) */}
+      <FunderSupportsSection state={state} calc={calc} set={set} />
     </div>
+  );
+}
+
+// ═══ PROGRAM BUDGET (inside Current State) ═══
+function ProgramBudgetSection({ state, calc, set }) {
+  const lines = state.budgetLines || [];
+  const total = calc.fixedTotal;
+
+  const updateLine = (id, patch) => {
+    set('budgetLines', lines.map(l => l.id === id ? { ...l, ...patch } : l));
+  };
+  const removeLine = (id) => set('budgetLines', lines.filter(l => l.id !== id));
+  const addLine = (programArea) => set('budgetLines', [...lines, { id: Date.now() + Math.random(), programArea, subCategory: SUB_CATEGORIES[0], detail: '', amount: 0 }]);
+
+  const inputStyle = { padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:12, fontFamily:"'Inter',sans-serif", background:'white' };
+  const selectStyle = { ...inputStyle, width:140 };
+  const textStyle = { ...inputStyle, flex:1 };
+  const numStyle = { ...inputStyle, width:100, textAlign:'right' };
+  const xBtn = { padding:'2px 6px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' };
+
+  return (
+    <Card style={{ marginTop:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Program Budget</div>
+        <div style={{ fontSize:13, fontWeight:700, color:GRAY900 }}>Grand Total: {fmt(total)}</div>
+      </div>
+      <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Your real line-item budget grouped by program area and sub-category. Drives the Fixed Total for every model.</div>
+
+      {/* Rollup cards */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
+        {PROGRAM_AREAS.map(area => {
+          const sub = calc.budgetByArea?.[area] || 0;
+          const pctNum = total > 0 ? (sub / total * 100) : 0;
+          return (
+            <div key={area} style={{ flex:'1 1 160px', background:GRAY50, border:'1px solid '+GRAY200, borderRadius:8, padding:'8px 10px' }}>
+              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.05em', color:GRAY500 }}>{area}</div>
+              <div style={{ fontSize:16, fontWeight:700, color:GRAY900 }}>{fmt(sub)}</div>
+              <div style={{ fontSize:11, color:GRAY500 }}>{pctNum.toFixed(1)}% of total</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Grouped line-item table */}
+      {PROGRAM_AREAS.map(area => {
+        const areaLines = lines.filter(l => l.programArea === area);
+        return (
+          <div key={area} style={{ marginBottom:10, borderTop:'1px solid '+GRAY200, paddingTop:8 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:GRAY900 }}>{area}</div>
+              <div style={{ fontSize:12, fontWeight:700, color:GRAY700 }}>{fmt(calc.budgetByArea?.[area] || 0)}</div>
+            </div>
+            {areaLines.map(l => (
+              <div key={l.id} style={{ display:'flex', gap:6, alignItems:'center', marginBottom:4 }}>
+                <select value={l.subCategory} onChange={e=>updateLine(l.id,{subCategory:e.target.value})} style={selectStyle}>
+                  {SUB_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input type="text" value={l.detail||''} placeholder="Detail" onChange={e=>updateLine(l.id,{detail:e.target.value})} style={textStyle} />
+                <input type="number" value={l.amount} onChange={e=>updateLine(l.id,{amount:Number(e.target.value)||0})} style={numStyle} />
+                <button onClick={()=>removeLine(l.id)} style={xBtn} title="Remove">{'\u00D7'}</button>
+              </div>
+            ))}
+            <button onClick={()=>addLine(area)} style={{ padding:'4px 8px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              + Add line to {area}
+            </button>
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
+// ═══ FUNDER SUPPORTS (cost offsets) ═══
+function FunderSupportsSection({ state, calc, set }) {
+  const rows = state.programFunderSupports || [];
+  const updateRow = (i, patch) => {
+    const next = [...rows]; next[i] = { ...next[i], ...patch }; set('programFunderSupports', next);
+  };
+  const removeRow = (i) => { const next = [...rows]; next.splice(i,1); set('programFunderSupports', next); };
+  const addRow = () => set('programFunderSupports', [...rows, { id: Date.now()+Math.random(), name:'', amount:0 }]);
+
+  const inputStyle = { padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 };
+  const gapAfter = calc.fixedGapAfterFunders;
+
+  return (
+    <Card style={{ marginTop:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Funder Supports (Cost Offsets)</div>
+        <div style={{ fontSize:12, color:GRAY500 }}>Subtracts from the program budget. Feeds the fixed-cost gap in What If.</div>
+      </div>
+      {rows.map((r,i) => (
+        <div key={r.id||i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+          <input type="text" value={r.name||''} placeholder="Funder name" onChange={e=>updateRow(i,{name:e.target.value})} style={{ ...inputStyle, flex:1 }} />
+          <input type="number" value={r.amount} placeholder="Amount" onChange={e=>updateRow(i,{amount:Number(e.target.value)||0})} style={{ ...inputStyle, width:120, textAlign:'right' }} />
+          <span style={{ fontSize:13, fontWeight:700, color:GREEN, minWidth:80, textAlign:'right' }}>{fmt(r.amount||0)}</span>
+          <button onClick={()=>removeRow(i)} style={{ padding:'3px 7px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' }}>{'\u00D7'}</button>
+        </div>
+      ))}
+      <button onClick={addRow} style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' }}>
+        + Add funder support
+      </button>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, fontSize:13 }}>
+        <div style={{ color:GRAY700 }}>Program Budget <strong>{fmt(calc.fixedTotal)}</strong> − Funder Supports <strong style={{ color:GREEN }}>{fmt(calc.funderSupportsTotal)}</strong> =</div>
+        <div style={{ fontWeight:700, color: gapAfter > 0 ? RED : GREEN }}>Fixed Cost Gap: {fmt(gapAfter)}</div>
+      </div>
+    </Card>
   );
 }
 
@@ -752,7 +909,7 @@ function ModelAPanel({ state, calc, set }) {
           </Card>
         </div>
         <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8, textAlign:'center' }}>
-          Fixed cost gap = {fmt(c.fixedTotal)} fixed + {fmt(c.programLevelAdditions)} program-level − {fmt(c.funderSupportsTotal)} funder support. Set on <strong>Full Program Costs</strong> tab.
+          Fixed cost gap = {fmt(c.fixedTotal)} program budget − {fmt(c.funderSupportsTotal)} funder support. Set on <strong>Current State</strong> tab.
         </div>
         <div style={{ background:c.maTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.maTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
           Model A generates <strong style={{ color:c.maTotalRev>=c.totalRevenue?GREEN:RED }}>{fmt(Math.abs(c.maTotalRev-c.totalRevenue))} {c.maTotalRev>=c.totalRevenue?'more':'less'}</strong> than current model
@@ -871,7 +1028,7 @@ function ModelBPanel({ state, calc, set }) {
           </Card>
         </div>
         <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8, textAlign:'center' }}>
-          Fixed cost gap = {fmt(c.fixedTotal)} fixed + {fmt(c.programLevelAdditions)} program-level − {fmt(c.funderSupportsTotal)} funder support. Set on <strong>Full Program Costs</strong> tab.
+          Fixed cost gap = {fmt(c.fixedTotal)} program budget − {fmt(c.funderSupportsTotal)} funder support. Set on <strong>Current State</strong> tab.
         </div>
         <div style={{ background:c.mbTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.mbTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
           Model B generates <strong style={{ color:c.mbTotalRev>=c.totalRevenue?GREEN:RED }}>{fmt(Math.abs(c.mbTotalRev-c.totalRevenue))} {c.mbTotalRev>=c.totalRevenue?'more':'less'}</strong> than current model
@@ -915,15 +1072,21 @@ function OutlookTab({ state, calc, forecast, set }) {
         <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Forecast Assumptions</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'0 16px' }}>
           <InputField label="Fee escalation/yr" value={s.feeEscalation} min={0} max={15} step={0.5} onChange={v=>set('feeEscalation',v)} unit="%" />
-          <InputField label="Cost inflation/yr" value={s.costInflation} min={0} max={15} step={0.5} onChange={v=>set('costInflation',v)} unit="%" />
-          <InputField label="Staff raises/yr" value={s.staffRaiseRate} min={0} max={15} step={0.5} onChange={v=>set('staffRaiseRate',v)} unit="%" />
+          <InputField label="Variable cost inflation/yr" value={s.variableCostInflation} min={0} max={15} step={0.5} onChange={v=>set('variableCostInflation',v)} unit="%" note="per IPP / cohort / cert costs" />
           <InputField label="Pipeline growth/yr" value={s.pipelineGrowth} min={-20} max={50} onChange={v=>set('pipelineGrowth',v)} unit="%" />
+          <InputField label="Grant growth/yr" value={s.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%" />
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'0 16px' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'0 16px' }}>
           <InputField label="Start year" value={s.forecastStartYear} min={2024} max={2030} onChange={v=>set('forecastStartYear',v)} />
           <InputField label="Reaccred year" value={s.reaccredYear} min={2025} max={2035} onChange={v=>set('reaccredYear',v)} />
           <InputField label="Reaccred cost" value={s.reaccredCost} min={0} max={100000} step={1000} onChange={v=>set('reaccredCost',v)} prefix="$" />
-          <InputField label="Grant growth/yr" value={s.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%" />
+        </div>
+        <SectionDivider label="Annual Markup by Sub-category (applied to Program Budget)" />
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:'0 16px' }}>
+          {SUB_CATEGORIES.map(cat => (
+            <InputField key={cat} label={cat} value={(s.subCategoryMarkups||{})[cat] ?? 0} min={0} max={20} step={0.5}
+              onChange={v=>set('subCategoryMarkups', { ...(s.subCategoryMarkups||{}), [cat]: v })} unit="%" />
+          ))}
         </div>
         <div style={{ display:'flex', gap:8, marginTop:8 }}>
           <label style={{ fontSize:12, fontWeight:600, color:GRAY700, marginRight:4 }}>Detailed forecast uses:</label>
@@ -1036,118 +1199,6 @@ function OutlookTab({ state, calc, forecast, set }) {
   );
 }
 
-// ═══ FULL PROGRAM COSTS TAB ═══
-function FullProgramCostsTab({ state, calc, set }) {
-  const additionalFixedCosts = state.additionalFixedCosts || [];
-  const programFunderSupports = state.programFunderSupports || [];
-
-  const updateRow = (key, i, patch) => {
-    const next = [...(state[key]||[])];
-    next[i] = { ...next[i], ...patch };
-    set(key, next);
-  };
-  const removeRow = (key, i) => {
-    const next = [...(state[key]||[])];
-    next.splice(i, 1);
-    set(key, next);
-  };
-
-  const rowStyle = { display:'flex', gap:8, alignItems:'center', marginBottom:8 };
-  const txtInputStyle = { flex:1, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" };
-  const numInputStyle = { width:120, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right', fontFamily:"'Inter',sans-serif" };
-  const removeBtnStyle = { padding:'4px 8px', fontSize:14, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer', lineHeight:1 };
-  const addBtnStyle = { padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' };
-  const subtotalStyle = { fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:10 };
-
-  const programSubtotal = (state.costGovernance||0) + (state.costProgramAdmin||0) + (state.costInstructorSupport||0) + (state.costOutreach||0);
-
-  return (
-    <div>
-      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Total program cost view — carries the operational costs from Current State, adds program-level costs and additional fixed costs, and applies funder supports to show Net Program Cost.</div>
-
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Carried Over from Current State" />
-        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>These values flow from Current State. Edit them there.</div>
-        <div style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
-          <StatCard label="IPP Delivery Total" value={fmt(calc.ippCostTotal)} sub={state.newIPPInstructors+' instructors \u00D7 '+fmt(state.costPerIPP)} color={GRAY900} />
-          <StatCard label="Cohort Processing Total" value={fmt(calc.cohortCostTotal)} sub={calc.totalCohorts.toFixed(1)+' cohorts \u00D7 '+fmt(state.costPerCohort)} color={GRAY900} />
-          <StatCard label="Cert Issuance Total" value={fmt(calc.certCostTotal)} sub={Math.round(calc.certsIssued)+' certs \u00D7 '+fmt(state.costPerCert)} color={GRAY900} />
-          <StatCard label="Existing Fixed Costs" value={fmt(calc.fixedTotal)} sub="Staff, LMS, Accreditation/ANSI, Systems" color={GRAY900} />
-        </div>
-        <div style={{ ...subtotalStyle, marginTop:14 }}>Current-State Program Cost: {fmt(calc.totalCost)}</div>
-      </Card>
-
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Additional Program-Level Costs" />
-        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Program costs not included in IPP or cohort delivery.</div>
-        <InputField label="Governance" value={state.costGovernance} min={0} max={50000} step={100} onChange={v=>set('costGovernance',v)} prefix="$" />
-        <InputField label="Program Administration" value={state.costProgramAdmin} min={0} max={200000} step={500} onChange={v=>set('costProgramAdmin',v)} prefix="$" />
-        <InputField label="Instructor Support" value={state.costInstructorSupport} min={0} max={100000} step={250} onChange={v=>set('costInstructorSupport',v)} prefix="$" />
-        <InputField label="Outreach" value={state.costOutreach} min={0} max={100000} step={250} onChange={v=>set('costOutreach',v)} prefix="$" />
-        <div style={subtotalStyle}>Subtotal: {fmt(programSubtotal)}</div>
-      </Card>
-
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Additional Fixed Costs" />
-        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Add any other annual fixed costs not listed on Current State.</div>
-        {additionalFixedCosts.map((row, i) => (
-          <div key={row.id || i} style={rowStyle}>
-            <input type="text" value={row.label||''} placeholder="e.g. Legal retainer"
-              onChange={e => updateRow('additionalFixedCosts', i, { label: e.target.value })}
-              style={txtInputStyle} />
-            <input type="number" value={row.amount} placeholder="Amount"
-              onChange={e => updateRow('additionalFixedCosts', i, { amount: Number(e.target.value) || 0 })}
-              style={numInputStyle} />
-            <span style={{ fontSize:13, fontWeight:700, color:GRAY900, minWidth:80, textAlign:'right' }}>{fmt(row.amount||0)}</span>
-            <button onClick={() => removeRow('additionalFixedCosts', i)} style={removeBtnStyle} title="Remove">{'\u00D7'}</button>
-          </div>
-        ))}
-        <button onClick={() => set('additionalFixedCosts', [...additionalFixedCosts, { id: Date.now(), label:'', amount:0 }])} style={addBtnStyle}>
-          + Add fixed cost
-        </button>
-        {additionalFixedCosts.length > 0 && (
-          <div style={subtotalStyle}>Subtotal: {fmt(calc.additionalFixedTotal)}</div>
-        )}
-      </Card>
-
-      <Card style={{ marginBottom:16 }}>
-        <SectionDivider label="Funder Supports (Offsets)" />
-        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>
-          Grants or sponsorships that offset program costs on this view. Entries here are separate from the revenue-side Funders & Grants on Current State.
-        </div>
-        {programFunderSupports.map((row, i) => (
-          <div key={row.id || i} style={rowStyle}>
-            <input type="text" value={row.name||''} placeholder="Funder name"
-              onChange={e => updateRow('programFunderSupports', i, { name: e.target.value })}
-              style={txtInputStyle} />
-            <input type="number" value={row.amount} placeholder="Amount"
-              onChange={e => updateRow('programFunderSupports', i, { amount: Number(e.target.value) || 0 })}
-              style={numInputStyle} />
-            <span style={{ fontSize:13, fontWeight:700, color:GREEN, minWidth:80, textAlign:'right' }}>{fmt(row.amount||0)}</span>
-            <button onClick={() => removeRow('programFunderSupports', i)} style={removeBtnStyle} title="Remove">{'\u00D7'}</button>
-          </div>
-        ))}
-        <button onClick={() => set('programFunderSupports', [...programFunderSupports, { id: Date.now(), name:'', amount:0 }])} style={addBtnStyle}>
-          + Add funder support
-        </button>
-        {programFunderSupports.length > 0 && (
-          <div style={{ ...subtotalStyle, color:GREEN }}>Total funder support: {fmt(calc.funderSupportsTotal)}</div>
-        )}
-      </Card>
-
-      <Card>
-        <SectionDivider label="Totals" />
-        <div style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
-          <StatCard label="Full Program Cost" value={fmt(calc.fullProgramCost)} sub="Current-state + additions" color={GRAY900} />
-          <StatCard label="Funder Supports" value={fmt(calc.funderSupportsTotal)} sub="Offsets applied" color={GREEN} />
-          <StatCard label="Net Program Cost" value={fmt(calc.netProgramCost)} sub="After funder offsets"
-            color={calc.netProgramCost > 0 ? RED : GREEN} highlight={true} />
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 // ═══ BREAK-EVEN ANALYSIS TAB ═══
 function BreakEvenTab({ state, calc }) {
   const s = state;
@@ -1166,13 +1217,16 @@ function BreakEvenTab({ state, calc }) {
 
         for (let yr = 0; yr < 5; yr++) {
           const feeEsc = Math.pow(1+s.feeEscalation/100, yr);
-          const costInf = Math.pow(1+s.costInflation/100, yr);
           const varCostInf = Math.pow(1+s.variableCostInflation/100, yr);
-          const staffInf = Math.pow(1+s.staffRaiseRate/100, yr);
           const pipeGrow = Math.pow(1+s.pipelineGrowth/100, yr);
           const grantGrow = Math.pow(1+s.grantGrowthRate/100, yr);
           const calYear = s.forecastStartYear + yr;
           const isReaccred = calYear === s.reaccredYear;
+          const beMarkups = s.subCategoryMarkups || {};
+          const beBudgetEsc = (s.budgetLines||[]).reduce((sum, l) => {
+            const rate = beMarkups[l.subCategory] != null ? beMarkups[l.subCategory] : 0;
+            return sum + (Number(l.amount)||0) * Math.pow(1 + rate/100, yr);
+          }, 0);
 
           if (yr > 0) { p = Math.round(p*(s.renewalRate/100)) + Math.round(s.newIPPInstructors*pipeGrow*(s.pctIPPtoLicense/100)); }
           const newIPP = Math.round(s.newIPPInstructors*pipeGrow);
@@ -1206,8 +1260,7 @@ function BreakEvenTab({ state, calc }) {
           cumB += (mbSt*mbStT3+mbSd*mbSdT3+mbGr*mbGrT3)*feeEsc + mbAddOn + ippRev + grantRev;
 
           // Cost
-          const accred = s.costAccreditation*costInf+(isReaccred?s.reaccredCost:0);
-          const fixed = s.costStaff*staffInf+s.costLMS*costInf+accred+s.costSystems*costInf;
+          const fixed = beBudgetEsc + (isReaccred ? s.reaccredCost : 0);
           cumCost += fixed+newIPP*s.costPerIPP*varCostInf+cohorts*s.costPerCohort*varCostInf+participants*s.costPerCert*varCostInf;
         }
 
@@ -1423,7 +1476,7 @@ function BreakEvenTab({ state, calc }) {
           </table>
         </div>
         <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8 }}>
-          All simulations use your current cost structure, fee escalation ({s.feeEscalation}%/yr), cost inflation ({s.costInflation}%/yr), pipeline growth ({s.pipelineGrowth}%/yr), and reaccreditation in {s.reaccredYear}.
+          All simulations use your current Program Budget, per-sub-category markups, fee escalation ({s.feeEscalation}%/yr), variable cost inflation ({s.variableCostInflation}%/yr), pipeline growth ({s.pipelineGrowth}%/yr), and reaccreditation in {s.reaccredYear}.
         </div>
       </Card>
     </div>
