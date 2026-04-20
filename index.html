@@ -406,15 +406,18 @@ function App() {
     const certOverageRev = (s.anticipatedCertFee||0) * (s.anticipatedCertCount||0);
     const grantRevenue = (s.funders||[]).reduce((sum,f)=>sum+(f.amount||0),0);
     const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
+    // Per-event costs are modeling inputs — they scale program costs in What If
+    // and 5-Year Outlook only. Current State totals (Total Costs, Current/Model A/B
+    // Profit in the header, and the Margin rollup) use ONLY the line-item budget,
+    // because the user's staff time for current volumes is already captured there.
     const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
     const cohortCostTotal = totalCohorts * s.costPerCohort;
     const partnerCostTotal = totalPartners * (s.costPerPartner || 0);
     const certCostTotal = certsIssued * (s.costPerCert || 0);
-    const totalCost = fixedTotal + ippCostTotal + cohortCostTotal + partnerCostTotal + certCostTotal;
+    const variableCostTotal = ippCostTotal + cohortCostTotal + partnerCostTotal + certCostTotal;
+    const totalCost = fixedTotal;
     const netMargin = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0 ? netMargin/totalRevenue : -1;
-
-    const variableCostTotal = ippCostTotal + cohortCostTotal + partnerCostTotal + certCostTotal;
     const fixedGap = fixedTotal;
     const currentContribution = totalRevenue - variableCostTotal;
     const currentNetAfterFunders = currentContribution - fixedGap;
