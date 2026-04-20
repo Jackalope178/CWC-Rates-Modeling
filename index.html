@@ -600,10 +600,10 @@ function App() {
 
       {/* STAT CARDS */}
       <div style={{ display:'flex', gap:12, padding:'16px 24px', flexWrap:'wrap', position:'sticky', top:0, zIndex:10, background:GRAY100 }}>
-        <StatCard label="Current Profit" value={fmt(calc.netMargin)} sub={fmt(calc.totalRevenue)+' revenue'} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
-        <StatCard label="Model A Profit" value={fmt(calc.maNetMargin)} sub={fmt(calc.maTotalRev)+' revenue'} color={calc.maNetMargin>=0?GREEN:RED} highlight={true} />
-        <StatCard label="Model B Profit" value={fmt(calc.mbNetMargin)} sub={fmt(calc.mbTotalRev)+' revenue'} color={calc.mbNetMargin>=0?GREEN:RED} highlight={true} />
-        <StatCard label="Total Costs" value={fmt(calc.totalCost)} sub={calc.totalPartners+' partners'} color={RED} />
+        <StatCard label="Total Revenue" value={fmt(calc.totalRevenue)} sub={fmt(calc.licenseRevenue)+' license + '+fmt(calc.ippRevenue)+' IPP + '+fmt(calc.grantRevenue)+' grants'} color={GREEN} />
+        <StatCard label="Program Budget" value={fmt(calc.fixedTotal)} sub={calc.totalPartners+' partners · '+calc.totalCohorts.toFixed(1)+' cohorts/yr'} color={GRAY900} />
+        <StatCard label={calc.netMargin>=0?'Surplus':'Funding Gap'} value={fmt(calc.netMargin)} sub={calc.netMargin>=0?'revenue exceeds costs':'revenue short of costs'} color={calc.netMargin>=0?GREEN:RED} highlight={true} />
+        <StatCard label="Funder Coverage" value={calc.fixedTotal>0 ? Math.round(calc.grantRevenue/calc.fixedTotal*100)+'%' : '0%'} sub={fmt(calc.grantRevenue)+' of '+fmt(calc.fixedTotal)+' costs'} color={PURPLE} />
       </div>
 
       {/* TAB BAR */}
