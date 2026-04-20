@@ -167,6 +167,17 @@ function migrateState(loaded) {
     out.funders = merged;
   }
   delete out.programFunderSupports;
+  // One-time reset of per-event costs (Per IPP / Per Cohort / Per Cert) to 0.
+  // These previously double-counted staff time already line-itemed in the
+  // Program Budget. Zero on first load after this version; flag prevents repeat
+  // so the user can intentionally re-enter non-zero values for true non-staff
+  // per-event costs and have them stick.
+  if (!out._migratedPerEventCostsV1) {
+    out.costPerIPP = 0;
+    out.costPerCohort = 0;
+    out.costPerCert = 0;
+    out._migratedPerEventCostsV1 = true;
+  }
   if (Array.isArray(out.budgetLines) && out.budgetLines.length > 0) return out;
   const lines = [];
   let id = 1;
