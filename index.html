@@ -110,7 +110,7 @@ const defaults = {
   // --- CURRENT STATE: costs ---
   budgetLines: DEFAULT_BUDGET_LINES,
   subCategoryMarkups: { 'Staff time':5, 'Fees':3, 'Contractual':3, 'Systems':3, 'Travel':3 },
-  costPerIPP: 0, costPerCohort: 0, costPerCert: 0,
+  costPerIPP: 0, costPerCohort: 0, costPerCert: 0, costPerPartner: 0,
   // --- CURRENT STATE: revenue ---
   feeIPP: 2000, feeCohort: 0, feeCertOverage: 0,
   anticipatedCertFee: 50,
@@ -408,12 +408,13 @@ function App() {
     const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
     const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
     const cohortCostTotal = totalCohorts * s.costPerCohort;
-    const certCostTotal = certsIssued * s.costPerCert;
-    const totalCost = fixedTotal + ippCostTotal + cohortCostTotal + certCostTotal;
+    const partnerCostTotal = totalPartners * (s.costPerPartner || 0);
+    const certCostTotal = certsIssued * (s.costPerCert || 0);
+    const totalCost = fixedTotal + ippCostTotal + cohortCostTotal + partnerCostTotal + certCostTotal;
     const netMargin = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0 ? netMargin/totalRevenue : -1;
 
-    const variableCostTotal = ippCostTotal + cohortCostTotal + certCostTotal;
+    const variableCostTotal = ippCostTotal + cohortCostTotal + partnerCostTotal + certCostTotal;
     const fixedGap = fixedTotal;
     const currentContribution = totalRevenue - variableCostTotal;
     const currentNetAfterFunders = currentContribution - fixedGap;
@@ -463,7 +464,7 @@ function App() {
     return { fixedTotal, budgetByArea, budgetBySubCategory, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
       activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
-      ippCostTotal, cohortCostTotal, certCostTotal, totalCost, netMargin, marginPct,
+      ippCostTotal, cohortCostTotal, partnerCostTotal, certCostTotal, totalCost, netMargin, marginPct,
       variableCostTotal, fixedGap, currentContribution, currentNetAfterFunders,
       maSmall, maLarge, maAnnualRev, maCohortRev, maTotalRev, maNetMargin, maPilotDrag, maContribution, maNetAfterFunders,
       mbStarter, mbStandard, mbGrowth, mbPkgRev, mbIncludedCohorts, mbAddOnCohorts, mbAddOnRev, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag, mbContribution, mbNetAfterFunders };
@@ -542,8 +543,9 @@ function App() {
       const fixedTotal = budgetLinesEsc + (isReaccred ? s.reaccredCost : 0);
       const ippCost = newIPP*s.costPerIPP*varCostInf;
       const cohortCost = cohorts*s.costPerCohort*varCostInf;
-      const certCost = participants*s.costPerCert*varCostInf;
-      const totalCost = fixedTotal+ippCost+cohortCost+certCost;
+      const partnerCost = partners*(s.costPerPartner||0)*varCostInf;
+      const certCost = participants*(s.costPerCert||0)*varCostInf;
+      const totalCost = fixedTotal+ippCost+cohortCost+partnerCost+certCost;
 
       const chosenRev = s.forecastModel==='a'?maRev : s.forecastModel==='b'?mbRev : currentRev;
       const netMargin = chosenRev - totalCost;
@@ -743,12 +745,12 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
           <div style={{ fontSize:11, color:GRAY500 }}>Scales program costs with growth in What If & 5-Year Outlook</div>
         </div>
         <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginBottom:12 }}>
-          Additional non-staff costs per IPP / cohort / certificate (materials, consumables, printing). Leave at 0 if your Program Budget already covers staff time — these only kick in when modeling growth or forecasting 5 years out.
+          Additional staff time costs per IPP / partner renewal or new license / cohort documentation. These only kick in when modeling growth or forecasting 5 years out.
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px' }}>
-          <InputField label="Per IPP" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" />
-          <InputField label="Per Cohort" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" />
-          <InputField label="Per Cert" value={state.costPerCert} min={0} max={100} onChange={v=>set('costPerCert',v)} prefix="$" />
+          <InputField label="Per IPP onboarded" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" note="× new IPP instructors/yr" />
+          <InputField label="Per partner (renewal)" value={state.costPerPartner} min={0} max={5000} step={25} onChange={v=>set('costPerPartner',v)} prefix="$" note="× total partners — annual paperwork" />
+          <InputField label="Per cohort documentation" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" note="× anticipated cohorts/yr" />
         </div>
       </Card>
     </div>
@@ -932,7 +934,7 @@ function ModelAPanel({ state, calc, set }) {
             <div style={{ fontSize:12 }}>Cohort + Cert: <strong>{fmt(c.cohortRevenue + c.certOverageRev)}</strong></div>
             <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
             <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:BLUE }}>Revenue: {fmt(c.totalRevenue)}</div>
-            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(extra non-staff per-event)</span></div>}
+            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(scales with IPP / partners / cohorts)</span></div>}
             {c.variableCostTotal > 0 && <div style={{ fontSize:13, fontWeight:700, color:c.currentContribution>=0?GREEN:RED }}>Contribution: {fmt(c.currentContribution)}</div>}
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.currentNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.currentNetAfterFunders)}</div>
@@ -944,7 +946,7 @@ function ModelAPanel({ state, calc, set }) {
             <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
             {s.modelA_pilotEnabled && <div style={{ fontSize:12, color:RED }}>Pilot drag: <strong>{fmt(-c.maPilotDrag)}</strong></div>}
             <div style={{ borderTop:'1px solid '+TEAL+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:TEAL }}>Revenue: {fmt(c.maTotalRev)}</div>
-            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(extra non-staff per-event)</span></div>}
+            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(scales with IPP / partners / cohorts)</span></div>}
             {c.variableCostTotal > 0 && <div style={{ fontSize:13, fontWeight:700, color:c.maContribution>=0?GREEN:RED }}>Contribution: {fmt(c.maContribution)}</div>}
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.maNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.maNetAfterFunders)}</div>
@@ -1049,7 +1051,7 @@ function ModelBPanel({ state, calc, set }) {
             <div style={{ fontSize:12 }}>Cohort + Cert: <strong>{fmt(c.cohortRevenue + c.certOverageRev)}</strong></div>
             <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
             <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:BLUE }}>Revenue: {fmt(c.totalRevenue)}</div>
-            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(extra non-staff per-event)</span></div>}
+            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(scales with IPP / partners / cohorts)</span></div>}
             {c.variableCostTotal > 0 && <div style={{ fontSize:13, fontWeight:700, color:c.currentContribution>=0?GREEN:RED }}>Contribution: {fmt(c.currentContribution)}</div>}
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.currentNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.currentNetAfterFunders)}</div>
@@ -1063,7 +1065,7 @@ function ModelBPanel({ state, calc, set }) {
             <div style={{ fontSize:12 }}>IPP + Grants: <strong>{fmt(c.ippRevenue + c.grantRevenue)}</strong></div>
             {s.modelB_pilotEnabled && <div style={{ fontSize:12, color:RED }}>Pilot drag: <strong>{fmt(-c.mbPilotDrag)}</strong></div>}
             <div style={{ borderTop:'1px solid '+PURPLE+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:PURPLE }}>Revenue: {fmt(c.mbTotalRev)}</div>
-            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(extra non-staff per-event)</span></div>}
+            {c.variableCostTotal > 0 && <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(scales with IPP / partners / cohorts)</span></div>}
             {c.variableCostTotal > 0 && <div style={{ fontSize:13, fontWeight:700, color:c.mbContribution>=0?GREEN:RED }}>Contribution: {fmt(c.mbContribution)}</div>}
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.mbNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.mbNetAfterFunders)}</div>
@@ -1303,7 +1305,7 @@ function BreakEvenTab({ state, calc }) {
 
           // Cost
           const fixed = beBudgetEsc + (isReaccred ? s.reaccredCost : 0);
-          cumCost += fixed+newIPP*s.costPerIPP*varCostInf+cohorts*s.costPerCohort*varCostInf+participants*s.costPerCert*varCostInf;
+          cumCost += fixed + newIPP*s.costPerIPP*varCostInf + cohorts*s.costPerCohort*varCostInf + p*(s.costPerPartner||0)*varCostInf + participants*(s.costPerCert||0)*varCostInf;
         }
 
         const entry = { partners, cohPerOrg, cumCost };
