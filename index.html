@@ -88,6 +88,11 @@ const defaults = {
   // --- CURRENT STATE: revenue ---
   feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
   funders: [],
+
+  // --- FULL PROGRAM COSTS tab ---
+  costAccreditationGovernance: 0, costProgramAdmin: 0, costInstructorSupport: 0,
+  additionalFixedCosts: [],       // [{ id, label, amount }]
+  programFunderSupports: [],      // [{ id, name, amount }] — offsets on Full Program Costs view (separate from revenue-side funders[])
   // --- CURRENT STATE: pipeline ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
@@ -199,7 +204,7 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
-const TABS = ['Current State','What If','5-Year Outlook','Break-Even Analysis'];
+const TABS = ['Current State','What If','5-Year Outlook','Full Program Costs','Break-Even Analysis'];
 
 // ═══ MAIN APP ═══
 function App() {
@@ -298,6 +303,13 @@ function App() {
     const netMargin = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0 ? netMargin/totalRevenue : -1;
 
+    // Full Program Costs (separate roll-up — does NOT feed totalCost/netMargin above)
+    const additionalFixedTotal = (s.additionalFixedCosts||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
+    const programLevelAdditions = (s.costAccreditationGovernance||0) + (s.costProgramAdmin||0) + (s.costInstructorSupport||0) + additionalFixedTotal;
+    const fullProgramCost = totalCost + programLevelAdditions;
+    const funderSupportsTotal = (s.programFunderSupports||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
+    const netProgramCost = fullProgramCost - funderSupportsTotal;
+
     // Model A revenue
     const maSmall = Math.round(totalCohorts*(s.modelA_pctSmall/100));
     const maLarge = Math.round(totalCohorts*(1-s.modelA_pctSmall/100));
@@ -340,6 +352,7 @@ function App() {
       activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
       ippCostTotal, cohortCostTotal, certCostTotal, totalCost, netMargin, marginPct,
+      additionalFixedTotal, programLevelAdditions, fullProgramCost, funderSupportsTotal, netProgramCost,
       maSmall, maLarge, maAnnualRev, maCohortRev, maTotalRev, maNetMargin, maPilotDrag,
       mbStarter, mbStandard, mbGrowth, mbPkgRev, mbIncludedCohorts, mbAddOnCohorts, mbAddOnRev, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag };
   }, [state]);
@@ -488,6 +501,7 @@ function App() {
         {activeTab==='Current State' && <CurrentStateTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
         {activeTab==='What If' && <WhatIfTab state={state} calc={calc} set={set} whatIfModel={whatIfModel} setWhatIfModel={setWhatIfModel} />}
         {activeTab==='5-Year Outlook' && <OutlookTab state={state} calc={calc} forecast={forecast} set={set} />}
+        {activeTab==='Full Program Costs' && <FullProgramCostsTab state={state} calc={calc} set={set} />}
         {activeTab==='Break-Even Analysis' && <BreakEvenTab state={state} calc={calc} />}
       </div>
 
@@ -989,6 +1003,117 @@ function OutlookTab({ state, calc, forecast, set }) {
                 <td style={tdS}>{'\u2014'}</td></tr>
             </tbody>
           </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ═══ FULL PROGRAM COSTS TAB ═══
+function FullProgramCostsTab({ state, calc, set }) {
+  const additionalFixedCosts = state.additionalFixedCosts || [];
+  const programFunderSupports = state.programFunderSupports || [];
+
+  const updateRow = (key, i, patch) => {
+    const next = [...(state[key]||[])];
+    next[i] = { ...next[i], ...patch };
+    set(key, next);
+  };
+  const removeRow = (key, i) => {
+    const next = [...(state[key]||[])];
+    next.splice(i, 1);
+    set(key, next);
+  };
+
+  const rowStyle = { display:'flex', gap:8, alignItems:'center', marginBottom:8 };
+  const txtInputStyle = { flex:1, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, fontFamily:"'Inter',sans-serif" };
+  const numInputStyle = { width:120, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13, textAlign:'right', fontFamily:"'Inter',sans-serif" };
+  const removeBtnStyle = { padding:'4px 8px', fontSize:14, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer', lineHeight:1 };
+  const addBtnStyle = { padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' };
+  const subtotalStyle = { fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:10 };
+
+  const programSubtotal = (state.costAccreditationGovernance||0) + (state.costProgramAdmin||0) + (state.costInstructorSupport||0);
+
+  return (
+    <div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Total program cost view — carries the operational costs from Current State, adds program-level costs and additional fixed costs, and applies funder supports to show Net Program Cost.</div>
+
+      <Card style={{ marginBottom:16 }}>
+        <SectionDivider label="Carried Over from Current State" />
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>These values flow from Current State. Edit them there.</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
+          <StatCard label="IPP Delivery Total" value={fmt(calc.ippCostTotal)} sub={state.newIPPInstructors+' instructors \u00D7 '+fmt(state.costPerIPP)} color={GRAY900} />
+          <StatCard label="Cohort Processing Total" value={fmt(calc.cohortCostTotal)} sub={calc.totalCohorts.toFixed(1)+' cohorts \u00D7 '+fmt(state.costPerCohort)} color={GRAY900} />
+          <StatCard label="Cert Issuance Total" value={fmt(calc.certCostTotal)} sub={Math.round(calc.certsIssued)+' certs \u00D7 '+fmt(state.costPerCert)} color={GRAY900} />
+          <StatCard label="Existing Fixed Costs" value={fmt(calc.fixedTotal)} sub="Staff, LMS, Accreditation/ANSI, Systems" color={GRAY900} />
+        </div>
+        <div style={{ ...subtotalStyle, marginTop:14 }}>Current-State Program Cost: {fmt(calc.totalCost)}</div>
+      </Card>
+
+      <Card style={{ marginBottom:16 }}>
+        <SectionDivider label="Additional Program-Level Costs" />
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Program costs not included in IPP or cohort delivery.</div>
+        <InputField label="Accreditation & Governance" value={state.costAccreditationGovernance} min={0} max={50000} step={100} onChange={v=>set('costAccreditationGovernance',v)} prefix="$" />
+        <InputField label="Program Administration" value={state.costProgramAdmin} min={0} max={200000} step={500} onChange={v=>set('costProgramAdmin',v)} prefix="$" />
+        <InputField label="Instructor Support" value={state.costInstructorSupport} min={0} max={100000} step={250} onChange={v=>set('costInstructorSupport',v)} prefix="$" />
+        <div style={subtotalStyle}>Subtotal: {fmt(programSubtotal)}</div>
+      </Card>
+
+      <Card style={{ marginBottom:16 }}>
+        <SectionDivider label="Additional Fixed Costs" />
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Add any other annual fixed costs not listed on Current State.</div>
+        {additionalFixedCosts.map((row, i) => (
+          <div key={row.id || i} style={rowStyle}>
+            <input type="text" value={row.label||''} placeholder="e.g. Legal retainer"
+              onChange={e => updateRow('additionalFixedCosts', i, { label: e.target.value })}
+              style={txtInputStyle} />
+            <input type="number" value={row.amount} placeholder="Amount"
+              onChange={e => updateRow('additionalFixedCosts', i, { amount: Number(e.target.value) || 0 })}
+              style={numInputStyle} />
+            <span style={{ fontSize:13, fontWeight:700, color:GRAY900, minWidth:80, textAlign:'right' }}>{fmt(row.amount||0)}</span>
+            <button onClick={() => removeRow('additionalFixedCosts', i)} style={removeBtnStyle} title="Remove">{'\u00D7'}</button>
+          </div>
+        ))}
+        <button onClick={() => set('additionalFixedCosts', [...additionalFixedCosts, { id: Date.now(), label:'', amount:0 }])} style={addBtnStyle}>
+          + Add fixed cost
+        </button>
+        {additionalFixedCosts.length > 0 && (
+          <div style={subtotalStyle}>Subtotal: {fmt(calc.additionalFixedTotal)}</div>
+        )}
+      </Card>
+
+      <Card style={{ marginBottom:16 }}>
+        <SectionDivider label="Funder Supports (Offsets)" />
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>
+          Grants or sponsorships that offset program costs on this view. Entries here are separate from the revenue-side Funders & Grants on Current State.
+        </div>
+        {programFunderSupports.map((row, i) => (
+          <div key={row.id || i} style={rowStyle}>
+            <input type="text" value={row.name||''} placeholder="Funder name"
+              onChange={e => updateRow('programFunderSupports', i, { name: e.target.value })}
+              style={txtInputStyle} />
+            <input type="number" value={row.amount} placeholder="Amount"
+              onChange={e => updateRow('programFunderSupports', i, { amount: Number(e.target.value) || 0 })}
+              style={numInputStyle} />
+            <span style={{ fontSize:13, fontWeight:700, color:GREEN, minWidth:80, textAlign:'right' }}>{fmt(row.amount||0)}</span>
+            <button onClick={() => removeRow('programFunderSupports', i)} style={removeBtnStyle} title="Remove">{'\u00D7'}</button>
+          </div>
+        ))}
+        <button onClick={() => set('programFunderSupports', [...programFunderSupports, { id: Date.now(), name:'', amount:0 }])} style={addBtnStyle}>
+          + Add funder support
+        </button>
+        {programFunderSupports.length > 0 && (
+          <div style={{ ...subtotalStyle, color:GREEN }}>Total funder support: {fmt(calc.funderSupportsTotal)}</div>
+        )}
+      </Card>
+
+      <Card>
+        <SectionDivider label="Totals" />
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12 }}>
+          <StatCard label="Full Program Cost" value={fmt(calc.fullProgramCost)} sub="Current-state + additions" color={GRAY900} />
+          <StatCard label="Funder Supports" value={fmt(calc.funderSupportsTotal)} sub="Offsets applied" color={GREEN} />
+          <StatCard label="Net Program Cost" value={fmt(calc.netProgramCost)} sub="After funder offsets"
+            color={calc.netProgramCost > 0 ? RED : GREEN} highlight={true} />
         </div>
       </Card>
     </div>
