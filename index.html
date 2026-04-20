@@ -703,15 +703,7 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
         {/* RIGHT: Per-Event Costs + Revenue Fees + Funders */}
         <div>
           <Card style={{ marginBottom:16 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Per-Event Costs & Revenue Fees</div>
-            <SectionDivider label="Per-Event Costs" />
-            <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginBottom:8 }}>Additional non-staff costs that scale with each event (materials, consumables, printing). Leave at 0 if your Program Budget already covers staff time for these.</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px' }}>
-              <InputField label="Per IPP" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" />
-              <InputField label="Per Cohort" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" />
-              <InputField label="Per Cert" value={state.costPerCert} min={0} max={100} onChange={v=>set('costPerCert',v)} prefix="$" />
-            </div>
-            <SectionDivider label="Revenue Fees" />
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Revenue Fees</div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
               <InputField label="Cohort fee" value={state.feeCohort} min={0} max={5000} step={25} onChange={v=>set('feeCohort',v)} prefix="$" />
               <InputField label="Cert overage fee" value={state.feeCertOverage} min={0} max={500} step={5} onChange={v=>set('feeCertOverage',v)} prefix="$" />
@@ -734,6 +726,22 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
 
       {/* PROGRAM BUDGET */}
       <ProgramBudgetSection state={state} calc={calc} set={set} />
+
+      {/* PER-EVENT COSTS — pushed to the bottom since they only feed What If and 5-Year Outlook projections */}
+      <Card style={{ marginTop:16 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Per-Event Costs (for projections)</div>
+          <div style={{ fontSize:11, color:GRAY500 }}>Scales program costs with growth in What If & 5-Year Outlook</div>
+        </div>
+        <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginBottom:12 }}>
+          Additional non-staff costs per IPP / cohort / certificate (materials, consumables, printing). Leave at 0 if your Program Budget already covers staff time — these only kick in when modeling growth or forecasting 5 years out.
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px' }}>
+          <InputField label="Per IPP" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" />
+          <InputField label="Per Cohort" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" />
+          <InputField label="Per Cert" value={state.costPerCert} min={0} max={100} onChange={v=>set('costPerCert',v)} prefix="$" />
+        </div>
+      </Card>
     </div>
   );
 }
