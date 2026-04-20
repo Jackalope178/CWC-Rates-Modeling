@@ -112,7 +112,9 @@ const defaults = {
   subCategoryMarkups: { 'Staff time':5, 'Fees':3, 'Contractual':3, 'Systems':3, 'Travel':3 },
   costPerIPP: 0, costPerCohort: 0, costPerCert: 0,
   // --- CURRENT STATE: revenue ---
-  feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
+  feeIPP: 2000, feeCohort: 0, feeCertOverage: 0,
+  anticipatedCertFee: 50,
+  anticipatedCertCount: 0,
   funders: [],
   // --- CURRENT STATE: pipeline ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
@@ -401,7 +403,7 @@ function App() {
     const certOverages = Math.max(0, certsIssued - certsIncluded);
     const ippRevenue = s.newIPPInstructors * s.feeIPP;
     const cohortRevenue = totalCohorts * s.feeCohort;
-    const certOverageRev = certOverages * s.feeCertOverage;
+    const certOverageRev = (s.anticipatedCertFee||0) * (s.anticipatedCertCount||0);
     const grantRevenue = (s.funders||[]).reduce((sum,f)=>sum+(f.amount||0),0);
     const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
     const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
@@ -665,13 +667,27 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
               <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>License Rev</div><div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.licenseRevenue)}</div></div>
               <div>
                 <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Cert Rev</div>
-                <div style={{ fontSize:18, fontWeight:700, color: calc.certOverages>0 ? GREEN : GRAY500 }}>{fmt(calc.certOverageRev)}</div>
-                <div style={{ fontSize:10, color:GRAY500 }}>{Math.round(calc.certsIssued)} issued / {calc.certsIncluded} included{calc.certOverages>0?' / '+Math.round(calc.certOverages)+' over':''}</div>
+                <div style={{ fontSize:18, fontWeight:700, color: calc.certOverageRev>0 ? GREEN : GRAY500 }}>{fmt(calc.certOverageRev)}</div>
+                <div style={{ fontSize:10, color:GRAY500 }}>{Math.round(calc.certsIssued)} issued / {calc.certsIncluded} included</div>
               </div>
-              <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Cohort Rev</div><div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.cohortRevenue)}</div></div>
               <div><div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Margin</div><div style={{ fontSize:18, fontWeight:700, color:calc.netMargin>=0?GREEN:RED }}>{fmt(calc.netMargin)}</div></div>
             </div>
-            <div style={{ fontSize:11, color:GRAY500, marginTop:6 }}>Each partner includes 15 certificates. Beyond that: {fmt(state.feeCertOverage)}/cert overage fee.</div>
+            <div style={{ marginTop:12, padding:'10px 12px', background:GRAY50, borderRadius:6, border:'1px solid '+GRAY200 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:GRAY900, marginBottom:6 }}>Anticipated Certificate Revenue</div>
+              <div style={{ display:'flex', gap:12, alignItems:'flex-end', flexWrap:'wrap' }}>
+                <div style={{ flex:'1 1 120px' }}>
+                  <InputField label="Fee per certificate" value={state.anticipatedCertFee} min={0} max={500} step={5} onChange={v=>set('anticipatedCertFee',v)} prefix="$" />
+                </div>
+                <div style={{ flex:'1 1 120px' }}>
+                  <InputField label="# of certificates" value={state.anticipatedCertCount} min={0} max={5000} step={1} onChange={v=>set('anticipatedCertCount',v)} />
+                </div>
+                <div style={{ marginBottom:14, minWidth:110, textAlign:'right' }}>
+                  <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Expected</div>
+                  <div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.certOverageRev)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize:11, color:GRAY500 }}>Each partner includes 15 certs. Enter the fee and count you expect to actually charge beyond that.</div>
+            </div>
           </Card>
           <Card>
             <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
@@ -702,13 +718,6 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
 
         {/* RIGHT: Per-Event Costs + Revenue Fees + Funders */}
         <div>
-          <Card style={{ marginBottom:16 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Revenue Fees</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-              <InputField label="Cohort fee" value={state.feeCohort} min={0} max={5000} step={25} onChange={v=>set('feeCohort',v)} prefix="$" />
-              <InputField label="Cert overage fee" value={state.feeCertOverage} min={0} max={500} step={5} onChange={v=>set('feeCertOverage',v)} prefix="$" />
-            </div>
-          </Card>
           <Card>
             <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>Funders & Grants <span style={{ fontSize:11, fontWeight:400, color:GRAY500 }}>(counted as revenue)</span></div>
             {(state.funders||[]).map((f,i) => (
