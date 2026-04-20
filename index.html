@@ -264,9 +264,23 @@ function Toggle({ label, value, onChange }) {
 
 const TABS = ['Current State','What If','5-Year Outlook','Break-Even Analysis'];
 
+// Synchronous localStorage persistence so inputs survive refresh without waiting
+// for Supabase. Supabase still handles cross-device sync on a debounce.
+const LOCAL_KEY = 'cwc_rates_state_v1';
+const readLocal = () => {
+  try { const raw = localStorage.getItem(LOCAL_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e) { return null; }
+};
+const writeLocal = (state) => {
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state)); } catch(e) {}
+};
+
 // ═══ MAIN APP ═══
 function App() {
-  const [state, setState] = useState({ ...defaults });
+  const [state, setState] = useState(() => {
+    const local = readLocal();
+    return local ? { ...defaults, ...migrateState(local) } : { ...defaults };
+  });
   const [activeTab, setActiveTab] = useState('Current State');
   const [whatIfModel, setWhatIfModel] = useState('a');
   const [editTierFees, setEditTierFees] = useState(false);
@@ -279,7 +293,10 @@ function App() {
   const [activeSaveId, setActiveSaveId] = useState(null);
   const [activeSaveName, setActiveSaveName] = useState('');
 
-  // Auto-load
+  // Write every state change to localStorage synchronously.
+  useEffect(() => { writeLocal(state); }, [state]);
+
+  // Auto-load from Supabase (async). localStorage already hydrated initial state.
   useEffect(() => {
     (async () => {
       try {
@@ -288,7 +305,14 @@ function App() {
         const autosave = allSaves.find(s => s.name === '__autosave__');
         if (autosave) {
           const data = await loadState(autosave.id);
-          if (data) { setState({ ...defaults, ...migrateState(data) }); autosaveIdRef.current = autosave.id; }
+          if (data) {
+            const local = readLocal();
+            // Prefer whichever state is "fresher": localStorage wins if it exists,
+            // so in-flight edits from right before a refresh aren't overwritten
+            // by a stale Supabase snapshot.
+            if (!local) setState({ ...defaults, ...migrateState(data) });
+            autosaveIdRef.current = autosave.id;
+          }
         }
       } catch(e) {}
       setLoaded(true);
