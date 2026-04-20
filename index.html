@@ -114,7 +114,6 @@ const defaults = {
   // --- CURRENT STATE: revenue ---
   feeIPP: 2000, feeCohort: 350, feeCertOverage: 50,
   funders: [],
-  programFunderSupports: [],      // [{ id, name, amount }] — cost offsets
   // --- CURRENT STATE: pipeline ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
@@ -153,11 +152,22 @@ const defaults = {
   forecastModel: 'current',
 };
 
-// Migration: convert legacy flat cost fields to budget lines for older saved scenarios.
+// Migration: convert legacy flat cost fields to budget lines, and fold the old
+// programFunderSupports array into funders so there's a single revenue-side list.
 function migrateState(loaded) {
   if (!loaded || typeof loaded !== 'object') return loaded;
-  if (Array.isArray(loaded.budgetLines) && loaded.budgetLines.length > 0) return loaded;
   const out = { ...loaded };
+  if (Array.isArray(out.programFunderSupports) && out.programFunderSupports.length > 0) {
+    const merged = [...(out.funders||[])];
+    out.programFunderSupports.forEach(r => {
+      if (!merged.some(f => f.name === r.name && Number(f.amount) === Number(r.amount))) {
+        merged.push({ name: r.name||'', amount: Number(r.amount)||0 });
+      }
+    });
+    out.funders = merged;
+  }
+  delete out.programFunderSupports;
+  if (Array.isArray(out.budgetLines) && out.budgetLines.length > 0) return out;
   const lines = [];
   let id = 1;
   const push = (programArea, subCategory, detail, amount) => {
@@ -285,23 +295,30 @@ function App() {
     })();
   }, []);
 
-  // Auto-save
+  // Auto-save: whichever slot is active. If the user has a named save loaded, edits
+  // write back to that save. Otherwise they flow into the hidden __autosave__ slot
+  // so changes survive a refresh without needing a Save As.
   const saveTimerRef = React.useRef(null);
   const loadedRef = React.useRef(false);
+  const activeSaveIdRef = React.useRef(null);
   useEffect(() => { loadedRef.current = loaded; }, [loaded]);
+  useEffect(() => { activeSaveIdRef.current = activeSaveId; }, [activeSaveId]);
   useEffect(() => {
     if (!loadedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        if (autosaveIdRef.current) { await saveState(null, state, autosaveIdRef.current); }
-        else {
+        if (activeSaveIdRef.current) {
+          await saveState(null, state, activeSaveIdRef.current);
+        } else if (autosaveIdRef.current) {
+          await saveState(null, state, autosaveIdRef.current);
+        } else {
           const result = await saveState('__autosave__', state, null);
           if (result) autosaveIdRef.current = result.id;
         }
         setSaveStatus('Saved'); setTimeout(() => setSaveStatus(''), 1500);
       } catch(e) { setSaveStatus('Save failed'); setTimeout(() => setSaveStatus(''), 3000); }
-    }, 2000);
+    }, 1000);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state]);
 
@@ -359,12 +376,10 @@ function App() {
     const netMargin = totalRevenue - totalCost;
     const marginPct = totalRevenue > 0 ? netMargin/totalRevenue : -1;
 
-    const funderSupportsTotal = (s.programFunderSupports||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
     const variableCostTotal = ippCostTotal + cohortCostTotal + certCostTotal;
-    const fixedGapAfterFunders = fixedTotal - funderSupportsTotal;
-    const netProgramCost = totalCost - funderSupportsTotal;
+    const fixedGap = fixedTotal;
     const currentContribution = totalRevenue - variableCostTotal;
-    const currentNetAfterFunders = currentContribution - fixedGapAfterFunders;
+    const currentNetAfterFunders = currentContribution - fixedGap;
 
     // Model A revenue
     const maSmall = Math.round(totalCohorts*(s.modelA_pctSmall/100));
@@ -404,16 +419,15 @@ function App() {
     }
     const mbNetMargin = mbTotalRev - totalCost;
     const maContribution = maTotalRev - variableCostTotal;
-    const maNetAfterFunders = maContribution - fixedGapAfterFunders;
+    const maNetAfterFunders = maContribution - fixedGap;
     const mbContribution = mbTotalRev - variableCostTotal;
-    const mbNetAfterFunders = mbContribution - fixedGapAfterFunders;
+    const mbNetAfterFunders = mbContribution - fixedGap;
 
     return { fixedTotal, budgetByArea, budgetBySubCategory, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
       activeCohortOrgs, totalCohorts, totalParticipants, certsIncluded, certsIssued, certOverages,
       ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
       ippCostTotal, cohortCostTotal, certCostTotal, totalCost, netMargin, marginPct,
-      funderSupportsTotal, netProgramCost,
-      variableCostTotal, fixedGapAfterFunders, currentContribution, currentNetAfterFunders,
+      variableCostTotal, fixedGap, currentContribution, currentNetAfterFunders,
       maSmall, maLarge, maAnnualRev, maCohortRev, maTotalRev, maNetMargin, maPilotDrag, maContribution, maNetAfterFunders,
       mbStarter, mbStandard, mbGrowth, mbPkgRev, mbIncludedCohorts, mbAddOnCohorts, mbAddOnRev, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag, mbContribution, mbNetAfterFunders };
   }, [state]);
@@ -669,9 +683,6 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
 
       {/* PROGRAM BUDGET */}
       <ProgramBudgetSection state={state} calc={calc} set={set} />
-
-      {/* FUNDER SUPPORTS (COST OFFSETS) */}
-      <FunderSupportsSection state={state} calc={calc} set={set} />
     </div>
   );
 }
@@ -741,43 +752,6 @@ function ProgramBudgetSection({ state, calc, set }) {
           </div>
         );
       })}
-    </Card>
-  );
-}
-
-// ═══ FUNDER SUPPORTS (cost offsets) ═══
-function FunderSupportsSection({ state, calc, set }) {
-  const rows = state.programFunderSupports || [];
-  const updateRow = (i, patch) => {
-    const next = [...rows]; next[i] = { ...next[i], ...patch }; set('programFunderSupports', next);
-  };
-  const removeRow = (i) => { const next = [...rows]; next.splice(i,1); set('programFunderSupports', next); };
-  const addRow = () => set('programFunderSupports', [...rows, { id: Date.now()+Math.random(), name:'', amount:0 }]);
-
-  const inputStyle = { padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:13 };
-  const gapAfter = calc.fixedGapAfterFunders;
-
-  return (
-    <Card style={{ marginTop:16 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Funder Supports (Cost Offsets)</div>
-        <div style={{ fontSize:12, color:GRAY500 }}>Subtracts from the program budget. Feeds the fixed-cost gap in What If.</div>
-      </div>
-      {rows.map((r,i) => (
-        <div key={r.id||i} style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
-          <input type="text" value={r.name||''} placeholder="Funder name" onChange={e=>updateRow(i,{name:e.target.value})} style={{ ...inputStyle, flex:1 }} />
-          <input type="number" value={r.amount} placeholder="Amount" onChange={e=>updateRow(i,{amount:Number(e.target.value)||0})} style={{ ...inputStyle, width:120, textAlign:'right' }} />
-          <span style={{ fontSize:13, fontWeight:700, color:GREEN, minWidth:80, textAlign:'right' }}>{fmt(r.amount||0)}</span>
-          <button onClick={()=>removeRow(i)} style={{ padding:'3px 7px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' }}>{'\u00D7'}</button>
-        </div>
-      ))}
-      <button onClick={addRow} style={{ padding:'6px 12px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' }}>
-        + Add funder support
-      </button>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, fontSize:13 }}>
-        <div style={{ color:GRAY700 }}>Program Budget <strong>{fmt(calc.fixedTotal)}</strong> − Funder Supports <strong style={{ color:GREEN }}>{fmt(calc.funderSupportsTotal)}</strong> =</div>
-        <div style={{ fontWeight:700, color: gapAfter > 0 ? RED : GREEN }}>Fixed Cost Gap: {fmt(gapAfter)}</div>
-      </div>
     </Card>
   );
 }
@@ -892,7 +866,7 @@ function ModelAPanel({ state, calc, set }) {
             <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:BLUE }}>Revenue: {fmt(c.totalRevenue)}</div>
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(IPP + cohort + cert delivery)</span></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.currentContribution>=0?GREEN:RED }}>Contribution: {fmt(c.currentContribution)}</div>
-            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGapAfterFunders)}</strong></div>
+            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.currentNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.currentNetAfterFunders)}</div>
           </Card>
           <Card style={{ background:'#f0fdfa' }}>
@@ -904,12 +878,12 @@ function ModelAPanel({ state, calc, set }) {
             <div style={{ borderTop:'1px solid '+TEAL+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:TEAL }}>Revenue: {fmt(c.maTotalRev)}</div>
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(IPP + cohort + cert delivery)</span></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.maContribution>=0?GREEN:RED }}>Contribution: {fmt(c.maContribution)}</div>
-            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGapAfterFunders)}</strong></div>
+            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.maNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.maNetAfterFunders)}</div>
           </Card>
         </div>
         <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8, textAlign:'center' }}>
-          Fixed cost gap = {fmt(c.fixedTotal)} program budget − {fmt(c.funderSupportsTotal)} funder support. Set on <strong>Current State</strong> tab.
+          Fixed cost gap = program budget {fmt(c.fixedTotal)}. Funders & Grants are already counted in Revenue above.
         </div>
         <div style={{ background:c.maTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.maTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
           Model A generates <strong style={{ color:c.maTotalRev>=c.totalRevenue?GREEN:RED }}>{fmt(Math.abs(c.maTotalRev-c.totalRevenue))} {c.maTotalRev>=c.totalRevenue?'more':'less'}</strong> than current model
@@ -1009,7 +983,7 @@ function ModelBPanel({ state, calc, set }) {
             <div style={{ borderTop:'1px solid '+GRAY200, paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:BLUE }}>Revenue: {fmt(c.totalRevenue)}</div>
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(IPP + cohort + cert delivery)</span></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.currentContribution>=0?GREEN:RED }}>Contribution: {fmt(c.currentContribution)}</div>
-            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGapAfterFunders)}</strong></div>
+            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.currentNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.currentNetAfterFunders)}</div>
           </Card>
           <Card style={{ background:'#faf5ff' }}>
@@ -1023,12 +997,12 @@ function ModelBPanel({ state, calc, set }) {
             <div style={{ borderTop:'1px solid '+PURPLE+'33', paddingTop:6, marginTop:6, fontSize:14, fontWeight:700, color:PURPLE }}>Revenue: {fmt(c.mbTotalRev)}</div>
             <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Variable costs: <strong>{fmt(-c.variableCostTotal)}</strong> <span style={{ color:GRAY500 }}>(IPP + cohort + cert delivery)</span></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.mbContribution>=0?GREEN:RED }}>Contribution: {fmt(c.mbContribution)}</div>
-            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGapAfterFunders)}</strong></div>
+            <div style={{ fontSize:12, color:GRAY700, marginTop:4 }}>− Fixed cost gap: <strong>{fmt(-c.fixedGap)}</strong></div>
             <div style={{ fontSize:13, fontWeight:700, color:c.mbNetAfterFunders>=0?GREEN:RED }}>Net Margin: {fmt(c.mbNetAfterFunders)}</div>
           </Card>
         </div>
         <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:8, textAlign:'center' }}>
-          Fixed cost gap = {fmt(c.fixedTotal)} program budget − {fmt(c.funderSupportsTotal)} funder support. Set on <strong>Current State</strong> tab.
+          Fixed cost gap = program budget {fmt(c.fixedTotal)}. Funders & Grants are already counted in Revenue above.
         </div>
         <div style={{ background:c.mbTotalRev>=c.totalRevenue?'#f0fdf4':'#fef2f2', border:'1px solid '+(c.mbTotalRev>=c.totalRevenue?GREEN:RED)+'33', borderRadius:8, padding:'10px 14px', marginTop:12, fontSize:13, textAlign:'center' }}>
           Model B generates <strong style={{ color:c.mbTotalRev>=c.totalRevenue?GREEN:RED }}>{fmt(Math.abs(c.mbTotalRev-c.totalRevenue))} {c.mbTotalRev>=c.totalRevenue?'more':'less'}</strong> than current model
