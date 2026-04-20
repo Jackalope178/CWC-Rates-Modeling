@@ -90,7 +90,7 @@ const defaults = {
   funders: [],
 
   // --- FULL PROGRAM COSTS tab ---
-  costAccreditationGovernance: 0, costProgramAdmin: 0, costInstructorSupport: 0,
+  costGovernance: 0, costProgramAdmin: 0, costInstructorSupport: 0, costOutreach: 0,
   additionalFixedCosts: [],       // [{ id, label, amount }]
   programFunderSupports: [],      // [{ id, name, amount }] — offsets on Full Program Costs view (separate from revenue-side funders[])
   // --- CURRENT STATE: pipeline ---
@@ -305,7 +305,7 @@ function App() {
 
     // Full Program Costs (separate roll-up — does NOT feed totalCost/netMargin above)
     const additionalFixedTotal = (s.additionalFixedCosts||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
-    const programLevelAdditions = (s.costAccreditationGovernance||0) + (s.costProgramAdmin||0) + (s.costInstructorSupport||0) + additionalFixedTotal;
+    const programLevelAdditions = (s.costGovernance||0) + (s.costProgramAdmin||0) + (s.costInstructorSupport||0) + (s.costOutreach||0) + additionalFixedTotal;
     const fullProgramCost = totalCost + programLevelAdditions;
     const funderSupportsTotal = (s.programFunderSupports||[]).reduce((sum,r)=>sum+(Number(r.amount)||0),0);
     const netProgramCost = fullProgramCost - funderSupportsTotal;
@@ -1032,7 +1032,7 @@ function FullProgramCostsTab({ state, calc, set }) {
   const addBtnStyle = { padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", width:'100%' };
   const subtotalStyle = { fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right', marginTop:10 };
 
-  const programSubtotal = (state.costAccreditationGovernance||0) + (state.costProgramAdmin||0) + (state.costInstructorSupport||0);
+  const programSubtotal = (state.costGovernance||0) + (state.costProgramAdmin||0) + (state.costInstructorSupport||0) + (state.costOutreach||0);
 
   return (
     <div>
@@ -1053,9 +1053,10 @@ function FullProgramCostsTab({ state, calc, set }) {
       <Card style={{ marginBottom:16 }}>
         <SectionDivider label="Additional Program-Level Costs" />
         <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Program costs not included in IPP or cohort delivery.</div>
-        <InputField label="Accreditation & Governance" value={state.costAccreditationGovernance} min={0} max={50000} step={100} onChange={v=>set('costAccreditationGovernance',v)} prefix="$" />
+        <InputField label="Governance" value={state.costGovernance} min={0} max={50000} step={100} onChange={v=>set('costGovernance',v)} prefix="$" />
         <InputField label="Program Administration" value={state.costProgramAdmin} min={0} max={200000} step={500} onChange={v=>set('costProgramAdmin',v)} prefix="$" />
         <InputField label="Instructor Support" value={state.costInstructorSupport} min={0} max={100000} step={250} onChange={v=>set('costInstructorSupport',v)} prefix="$" />
+        <InputField label="Outreach" value={state.costOutreach} min={0} max={100000} step={250} onChange={v=>set('costOutreach',v)} prefix="$" />
         <div style={subtotalStyle}>Subtotal: {fmt(programSubtotal)}</div>
       </Card>
 
