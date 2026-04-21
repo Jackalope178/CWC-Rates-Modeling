@@ -283,7 +283,7 @@ function Toggle({ label, value, onChange }) {
 function PipelineRetentionCard({ state, calc, set, prefix='' }) {
   const k = (name) => prefix + name;
   const totalPartners = calc.totalPartners;
-  const effP = totalPartners * (state[k('renewalRate')]/100) * (1 - state[k('dormantRate')]/100);
+  const effP = totalPartners * (state[k('renewalRate')]/100);
   const actOrgs = effP * (state[k('pctLicenseToActive')]/100);
   const cohorts = actOrgs * state[k('cohortsPerOrg')];
   const ippRev = state[k('newIPPInstructors')] * state[k('feeIPP')];
@@ -295,10 +295,9 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
         <InputField label="IPP fee" value={state[k('feeIPP')]} min={0} max={10000} step={100} onChange={v=>set(k('feeIPP'),v)} prefix="$" />
         <InputField label="% IPP to licensed" value={state[k('pctIPPtoLicense')]} min={0} max={100} onChange={v=>set(k('pctIPPtoLicense'),v)} unit="%" />
         <InputField label="% running cohorts" value={state[k('pctLicenseToActive')]} min={0} max={100} onChange={v=>set(k('pctLicenseToActive'),v)} unit="%" />
-        <InputField label="Cohorts per org/yr" value={state[k('cohortsPerOrg')]} min={1} max={10} onChange={v=>set(k('cohortsPerOrg'),v)} />
+        <InputField label="Cohorts per org/yr" value={state[k('cohortsPerOrg')]} min={1} max={10} onChange={v=>set(k('cohortsPerOrg'),v)} note="Directly-tunable average across the book. Instructor count doesn't scale this cleanly — some orgs have 6 instructors and 1 active cohort; others have 1 instructor and 3 cohorts. Use the historical average." />
         <InputField label="Avg participants" value={state[k('avgParticipants')]} min={1} max={15} onChange={v=>set(k('avgParticipants'),v)} />
-        <InputField label="Renewal rate" value={state[k('renewalRate')]} min={0} max={100} onChange={v=>set(k('renewalRate'),v)} unit="%" />
-        <InputField label="Dormant rate" value={state[k('dormantRate')]} min={0} max={100} onChange={v=>set(k('dormantRate'),v)} unit="%" />
+        <InputField label="Renewal rate" value={state[k('renewalRate')]} min={0} max={100} onChange={v=>set(k('renewalRate'),v)} unit="%" note="% of existing partners who renew their license each year. Drives retention across all models." />
       </div>
       <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, flexWrap:'wrap' }}>
         <div>
@@ -435,7 +434,7 @@ function App() {
     const totalPartners = s.partnerCounts.reduce((a,b)=>a+b,0) + ct.reduce((a,t)=>a+(t.count||0),0);
     const totalInstructors = s.partnerCounts.reduce((sum,c,i)=>sum+c*TIERS[i].instructors,0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.instructors||0),0);
     const licenseRevenue = s.partnerCounts.reduce((sum,c,i)=>sum+c*s.tierFees[i],0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.fee||0),0);
-    const effectivePartners = totalPartners * (s.renewalRate/100) * (1 - s.dormantRate/100);
+    const effectivePartners = totalPartners * (s.renewalRate/100);
     const activeCohortOrgs = effectivePartners * (s.pctLicenseToActive/100);
     const totalCohorts = activeCohortOrgs * s.cohortsPerOrg;
     const totalParticipants = totalCohorts * s.avgParticipants;
@@ -466,7 +465,7 @@ function App() {
     // ── Model-specific pipeline/retention (What If tab) ──
     // Model A/B use a separate set of pipeline/retention assumptions so the user can
     // explore "what if the funnel/retention were different" without disturbing Current State.
-    const modelEffP = totalPartners * (s.model_renewalRate/100) * (1 - s.model_dormantRate/100);
+    const modelEffP = totalPartners * (s.model_renewalRate/100);
     const modelActOrgs = modelEffP * (s.model_pctLicenseToActive/100);
     const modelTotalCohorts = modelActOrgs * s.model_cohortsPerOrg;
     const modelTotalParticipants = modelTotalCohorts * s.model_avgParticipants;
@@ -554,7 +553,7 @@ function App() {
       if (yr===0) partners=startPartners;
       else { const prev=years[yr-1]; partners=Math.round(prev.partners*(s.renewalRate/100))+Math.round(prev.newIPP*(s.pctIPPtoLicense/100)); }
       const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
-      const effP = partners*(s.renewalRate/100)*(1-s.dormantRate/100);
+      const effP = partners*(s.renewalRate/100);
       const actOrgs = effP*(s.pctLicenseToActive/100);
       const cohorts = actOrgs*s.cohortsPerOrg;
       const participants = cohorts*s.avgParticipants;
@@ -870,12 +869,12 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
     const arr = [];
     for (let p=1; p<=25; p++) {
       // Current line: Current State pipeline/retention
-      const cEffP = p*(s.renewalRate/100)*(1-s.dormantRate/100);
+      const cEffP = p*(s.renewalRate/100);
       const cCoh = cEffP*(s.pctLicenseToActive/100)*s.cohortsPerOrg;
       const cParts = cCoh*s.avgParticipants;
       const currRev = p*s.tierFees[0] + cCoh*s.feeCohort + Math.max(0,cParts-p*15)*s.feeCertOverage;
       // Models: What If pipeline/retention
-      const mEffP = p*(s.model_renewalRate/100)*(1-s.model_dormantRate/100);
+      const mEffP = p*(s.model_renewalRate/100);
       const coh = mEffP*(s.model_pctLicenseToActive/100)*s.model_cohortsPerOrg;
       // Model A
       const maSmall=Math.round(coh*(s.modelA_pctSmall/100)), maLarge=Math.round(coh*(1-s.modelA_pctSmall/100));
@@ -1158,7 +1157,7 @@ function OutlookTab({ state, calc, forecast, set }) {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'0 16px' }}>
           <InputField label="Fee escalation/yr" value={s.feeEscalation} min={0} max={15} step={0.5} onChange={v=>set('feeEscalation',v)} unit="%" />
           <InputField label="Variable cost inflation/yr" value={s.variableCostInflation} min={0} max={15} step={0.5} onChange={v=>set('variableCostInflation',v)} unit="%" note="per IPP / cohort / cert costs" />
-          <InputField label="Pipeline growth/yr" value={s.pipelineGrowth} min={-20} max={50} onChange={v=>set('pipelineGrowth',v)} unit="%" />
+          <InputField label="Pipeline growth/yr" value={s.pipelineGrowth} min={-20} max={50} onChange={v=>set('pipelineGrowth',v)} unit="%" note="Year-over-year change in new IPP enrollments. Use positive values to model price-elasticity lift — e.g., lower license fee attracting more pipeline." />
           <InputField label="Grant growth/yr" value={s.grantGrowthRate} min={-50} max={100} step={5} onChange={v=>set('grantGrowthRate',v)} unit="%" />
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'0 16px' }}>
@@ -1315,7 +1314,7 @@ function BreakEvenTab({ state, calc }) {
 
           if (yr > 0) { p = Math.round(p*(s.renewalRate/100)) + Math.round(s.newIPPInstructors*pipeGrow*(s.pctIPPtoLicense/100)); }
           const newIPP = Math.round(s.newIPPInstructors*pipeGrow);
-          const effP = p*(s.renewalRate/100)*(1-s.dormantRate/100);
+          const effP = p*(s.renewalRate/100);
           const actOrgs = effP*(s.pctLicenseToActive/100);
           const cohorts = actOrgs*cohPerOrg;
           const participants = cohorts*s.avgParticipants;
@@ -1338,7 +1337,7 @@ function BreakEvenTab({ state, calc }) {
           const mbSd=Math.round(p*(s.modelB_pctStandard/100));
           const mbGr=p-mbSt-mbSd;
           const mbInclCoh=mbSt*s.modelB_starterCohorts+mbSd*s.modelB_standardCohorts+mbGr*s.modelB_growthCohorts;
-          const mbAddOn=Math.max(0,coh-mbInclCoh)*s.modelB_addOnCohortFee*feeEsc;
+          const mbAddOn=Math.max(0,cohorts-mbInclCoh)*s.modelB_addOnCohortFee*feeEsc;
           const mbStT3=s.modelB_baseLicense+Math.max(0,s.modelB_starterCohorts-1)*s.modelB_starterPerCohort;
           const mbSdT3=s.modelB_baseLicense+Math.max(0,s.modelB_standardCohorts-1)*s.modelB_standardPerCohort;
           const mbGrT3=s.modelB_baseLicense+Math.max(0,s.modelB_growthCohorts-1)*s.modelB_growthPerCohort;
