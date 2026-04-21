@@ -72,6 +72,31 @@ const defaults = {
   sponsoredPartners: 2,
   sponsoredGrant: 0,
   sponsoredFunderName: 'Funder',
+
+  // Per-model pipeline & retention overrides (independent of "current view" values)
+  pilot_newIPPInstructors: 5,
+  pilot_pctIPPtoLicense: 60,
+  pilot_pctLicenseToActive: 75,
+  pilot_cohortsPerOrg: 1,
+  pilot_avgParticipants: 12,
+  pilot_renewalRate: 85,
+  pilot_dormantRate: 15,
+
+  consortium_newIPPInstructors: 5,
+  consortium_pctIPPtoLicense: 60,
+  consortium_pctLicenseToActive: 75,
+  consortium_cohortsPerOrg: 1,
+  consortium_avgParticipants: 12,
+  consortium_renewalRate: 85,
+  consortium_dormantRate: 15,
+
+  sponsored_newIPPInstructors: 5,
+  sponsored_pctIPPtoLicense: 60,
+  sponsored_pctLicenseToActive: 75,
+  sponsored_cohortsPerOrg: 1,
+  sponsored_avgParticipants: 12,
+  sponsored_renewalRate: 85,
+  sponsored_dormantRate: 15,
 };
 
 // ─── FORMATTERS ───
@@ -199,6 +224,105 @@ const Card = ({ children, style }) => (
   </div>
 );
 
+const PipelineRetentionInputs = ({ state, set, prefix }) => {
+  const k = (name) => `${prefix}_${name}`;
+  return (
+    <>
+      <SectionDivider label="Pipeline & Retention (model-specific)" />
+      <div style={{ fontSize: 12, color: GRAY500, fontStyle: 'italic', marginBottom: 12 }}>
+        These inputs are independent of the Pipeline and Costs tabs — adjust them to see how this scenario changes with different funnel and retention assumptions.
+      </div>
+      <SliderField label="New IPP instructors this cycle" value={state[k('newIPPInstructors')]} min={0} max={30} onChange={v => set(k('newIPPInstructors'), v)} />
+      <SliderField label="% IPP → licensed org" value={state[k('pctIPPtoLicense')]} min={0} max={100} onChange={v => set(k('pctIPPtoLicense'), v)} unit="%" />
+      <SliderField label="% licensed orgs → run ≥1 cohort/yr" value={state[k('pctLicenseToActive')]} min={0} max={100} onChange={v => set(k('pctLicenseToActive'), v)} unit="%" />
+      <SliderField label="Cohorts per active org/yr" value={state[k('cohortsPerOrg')]} min={1} max={6} onChange={v => set(k('cohortsPerOrg'), v)} />
+      <SliderField label="Avg participants per cohort" value={state[k('avgParticipants')]} min={1} max={15} onChange={v => set(k('avgParticipants'), v)} />
+      <SliderField label="License renewal rate" value={state[k('renewalRate')]} min={0} max={100} onChange={v => set(k('renewalRate'), v)} unit="%" />
+      <SliderField label="Dormant partner rate" value={state[k('dormantRate')]} min={0} max={100} onChange={v => set(k('dormantRate'), v)} unit="%" />
+    </>
+  );
+};
+
+// ─── CORE CALC HELPER (used by main view + scenario panels with their own pipeline/retention) ───
+const computeCalc = (state, overrides = {}) => {
+  const s = state;
+  const p = {
+    newIPPInstructors: s.newIPPInstructors,
+    pctIPPtoLicense: s.pctIPPtoLicense,
+    pctLicenseToActive: s.pctLicenseToActive,
+    cohortsPerOrg: s.cohortsPerOrg,
+    avgParticipants: s.avgParticipants,
+    renewalRate: s.renewalRate,
+    dormantRate: s.dormantRate,
+    ...overrides,
+  };
+
+  const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems + s.costOverhead;
+  const newPartners = Math.round(p.newIPPInstructors * (p.pctIPPtoLicense / 100));
+  const hiddenTotal = s.costSalesOutreach + (s.costOnboarding * newPartners) + s.costQACompliance + s.costSysMaintenance;
+
+  const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0);
+  const totalInstructors = s.partnerCounts.reduce((sum, c, i) => sum + c * TIERS[i].instructors, 0);
+  const licenseRevenue = s.partnerCounts.reduce((sum, c, i) => sum + c * s.tierFees[i], 0);
+  const effectivePartners = totalPartners * (p.renewalRate / 100) * (1 - p.dormantRate / 100);
+
+  const newLicensedOrgs = p.newIPPInstructors * (p.pctIPPtoLicense / 100);
+  const activeCohortOrgs = effectivePartners * (p.pctLicenseToActive / 100);
+  const totalCohorts = activeCohortOrgs * p.cohortsPerOrg;
+  const totalParticipants = totalCohorts * p.avgParticipants;
+  const certsIncluded = totalPartners * 15;
+  const certsIssued = totalParticipants;
+  const certOverages = Math.max(0, certsIssued - certsIncluded);
+
+  const ippRevenue = p.newIPPInstructors * s.feeIPP;
+  const cohortRevenue = totalCohorts * s.feeCohort;
+  const certOverageRev = certOverages * s.feeCertOverage;
+  const grantRevenue = s.feeGrant;
+  const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
+
+  const ippCostTotal = p.newIPPInstructors * s.costPerIPP;
+  const cohortCostTotal = totalCohorts * s.costPerCohort;
+  const certCostTotal = certsIssued * s.costPerCert;
+  const totalCost = fixedTotal + hiddenTotal + ippCostTotal + cohortCostTotal + certCostTotal;
+
+  const netMargin = totalRevenue - totalCost;
+  const marginPct = totalRevenue > 0 ? netMargin / totalRevenue : -1;
+
+  const recurringRevenue = licenseRevenue + cohortRevenue;
+  const stabilityScore = totalRevenue > 0 ? recurringRevenue / totalRevenue : 0;
+
+  const netPerPartner = s.tierFees[0]
+    + TIERS[0].instructors * (p.newIPPInstructors / Math.max(totalPartners, 1)) * s.feeIPP
+    - p.cohortsPerOrg * (p.pctLicenseToActive / 100) * s.feeCohort
+    - p.cohortsPerOrg * (p.pctLicenseToActive / 100) * s.costPerCohort
+    - TIERS[0].instructors * (p.newIPPInstructors / Math.max(totalPartners, 1)) * s.costPerIPP;
+  const breakEvenPartners = netPerPartner > 0
+    ? Math.ceil((fixedTotal + hiddenTotal) / netPerPartner)
+    : null;
+
+  return {
+    fixedTotal, hiddenTotal, newPartners,
+    totalPartners, totalInstructors, licenseRevenue, effectivePartners,
+    newLicensedOrgs, activeCohortOrgs, totalCohorts, totalParticipants,
+    certsIncluded, certsIssued, certOverages,
+    ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
+    ippCostTotal, cohortCostTotal, certCostTotal, totalCost,
+    netMargin, marginPct, recurringRevenue, stabilityScore,
+    netPerPartner, breakEvenPartners,
+  };
+};
+
+// Pull model-specific pipeline/retention overrides out of state by prefix
+const modelOverrides = (state, prefix) => ({
+  newIPPInstructors: state[`${prefix}_newIPPInstructors`],
+  pctIPPtoLicense: state[`${prefix}_pctIPPtoLicense`],
+  pctLicenseToActive: state[`${prefix}_pctLicenseToActive`],
+  cohortsPerOrg: state[`${prefix}_cohortsPerOrg`],
+  avgParticipants: state[`${prefix}_avgParticipants`],
+  renewalRate: state[`${prefix}_renewalRate`],
+  dormantRate: state[`${prefix}_dormantRate`],
+});
+
 // ─── TABS ───
 const TABS = ['Scenarios', 'Overview', 'Partners', 'Pipeline', 'Costs', 'Variable Map', 'Sensitivity'];
 
@@ -238,89 +362,8 @@ export default function App() {
     setEditTierFees(false);
   }, []);
 
-  // ─── CORE CALCULATIONS ───
-  const calc = useMemo(() => {
-    const s = state;
-    const fixedTotal = s.costStaff + s.costLMS + s.costAccreditation + s.costSystems + s.costOverhead;
-    const newPartners = Math.round(s.newIPPInstructors * (s.pctIPPtoLicense / 100));
-    const hiddenTotal = s.costSalesOutreach + (s.costOnboarding * newPartners) + s.costQACompliance + s.costSysMaintenance;
-
-    const totalPartners = s.partnerCounts.reduce((a, b) => a + b, 0);
-    const totalInstructors = s.partnerCounts.reduce((sum, c, i) => sum + c * TIERS[i].instructors, 0);
-    const licenseRevenue = s.partnerCounts.reduce((sum, c, i) => sum + c * s.tierFees[i], 0);
-    const effectivePartners = totalPartners * (s.renewalRate / 100) * (1 - s.dormantRate / 100);
-
-    const newLicensedOrgs = s.newIPPInstructors * (s.pctIPPtoLicense / 100);
-    const activeCohortOrgs = effectivePartners * (s.pctLicenseToActive / 100);
-    const totalCohorts = activeCohortOrgs * s.cohortsPerOrg;
-    const totalParticipants = totalCohorts * s.avgParticipants;
-    const certsIncluded = totalPartners * 15;
-    const certsIssued = totalParticipants;
-    const certOverages = Math.max(0, certsIssued - certsIncluded);
-
-    const ippRevenue = s.newIPPInstructors * s.feeIPP;
-    const cohortRevenue = totalCohorts * s.feeCohort;
-    const certOverageRev = certOverages * s.feeCertOverage;
-    const grantRevenue = s.feeGrant;
-    const totalRevenue = licenseRevenue + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
-
-    const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
-    const cohortCostTotal = totalCohorts * s.costPerCohort;
-    const certCostTotal = certsIssued * s.costPerCert;
-    const totalCost = fixedTotal + hiddenTotal + ippCostTotal + cohortCostTotal + certCostTotal;
-
-    const netMargin = totalRevenue - totalCost;
-    const marginPct = totalRevenue > 0 ? netMargin / totalRevenue : -1;
-
-    const recurringRevenue = licenseRevenue + cohortRevenue;
-    const stabilityScore = totalRevenue > 0 ? recurringRevenue / totalRevenue : 0;
-
-    const netPerPartner = s.tierFees[0]
-      + TIERS[0].instructors * (s.newIPPInstructors / Math.max(totalPartners, 1)) * s.feeIPP
-      - s.cohortsPerOrg * (s.pctLicenseToActive / 100) * s.feeCohort
-      - s.cohortsPerOrg * (s.pctLicenseToActive / 100) * s.costPerCohort
-      - TIERS[0].instructors * (s.newIPPInstructors / Math.max(totalPartners, 1)) * s.costPerIPP;
-    const breakEvenPartners = netPerPartner > 0
-      ? Math.ceil((fixedTotal + hiddenTotal) / netPerPartner)
-      : null;
-
-    // PILOT
-    const pilotYr1Revenue = (totalPartners - s.pilotPartners) * s.tierFees[0]
-      + s.pilotPartners * s.pilotFee
-      + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
-    const pilotYr1Margin = pilotYr1Revenue - totalCost;
-    const pilotYr2Revenue = (totalPartners - s.pilotPartners) * s.tierFees[0]
-      + s.pilotPartners * (s.pilotConvertPct / 100) * s.pilotFullFee
-      + ippRevenue + cohortRevenue + certOverageRev + grantRevenue;
-    const pilotYr2Margin = pilotYr2Revenue - totalCost;
-    const pilotDrag = totalRevenue - pilotYr1Revenue;
-
-    // CONSORTIUM
-    const consortiumRevenue = s.consortiumFee;
-    const consortiumCost = s.consortiumCohorts * s.costPerCohort;
-    const consortiumMargin = consortiumRevenue - consortiumCost;
-    const equivalentRevenue = s.consortiumPartners * s.tierFees[0];
-    const consortiumSaving = (equivalentRevenue - s.consortiumFee) / s.consortiumPartners;
-
-    // SPONSORED
-    const sponsoredGap = (s.sponsoredListPrice - s.sponsoredFee) * s.sponsoredPartners;
-    const sponsoredCWPMargin = netMargin - sponsoredGap;
-    const sponsoredFunderMargin = netMargin;
-
-    return {
-      fixedTotal, hiddenTotal, newPartners,
-      totalPartners, totalInstructors, licenseRevenue, effectivePartners,
-      newLicensedOrgs, activeCohortOrgs, totalCohorts, totalParticipants,
-      certsIncluded, certsIssued, certOverages,
-      ippRevenue, cohortRevenue, certOverageRev, grantRevenue, totalRevenue,
-      ippCostTotal, cohortCostTotal, certCostTotal, totalCost,
-      netMargin, marginPct, recurringRevenue, stabilityScore,
-      netPerPartner, breakEvenPartners,
-      pilotYr1Revenue, pilotYr1Margin, pilotYr2Revenue, pilotYr2Margin, pilotDrag,
-      consortiumRevenue, consortiumCost, consortiumMargin, equivalentRevenue, consortiumSaving,
-      sponsoredGap, sponsoredCWPMargin, sponsoredFunderMargin,
-    };
-  }, [state]);
+  // ─── CORE CALCULATIONS (current view — uses global pipeline/retention) ───
+  const calc = useMemo(() => computeCalc(state), [state]);
 
   // ─── SENSITIVITY DATA ───
   const sensitivityData = useMemo(() => {
@@ -416,7 +459,7 @@ export default function App() {
 
       {/* TAB CONTENT */}
       <div style={{ padding: '20px 24px', maxWidth: 1200, margin: '0 auto' }}>
-        {activeTab === 'Scenarios' && <ScenariosTab state={state} calc={calc} set={set} scenarioMode={scenarioMode} setScenarioMode={setScenarioMode} />}
+        {activeTab === 'Scenarios' && <ScenariosTab state={state} set={set} scenarioMode={scenarioMode} setScenarioMode={setScenarioMode} />}
         {activeTab === 'Overview' && <OverviewTab state={state} calc={calc} bothWorldsLens={bothWorldsLens} setBothWorldsLens={setBothWorldsLens} />}
         {activeTab === 'Partners' && <PartnersTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
         {activeTab === 'Pipeline' && <PipelineTab state={state} calc={calc} set={set} />}
@@ -436,7 +479,7 @@ export default function App() {
 // ═══════════════════════════════════════════════════════
 // TAB: SCENARIOS
 // ═══════════════════════════════════════════════════════
-function ScenariosTab({ state, calc, set, scenarioMode, setScenarioMode }) {
+function ScenariosTab({ state, set, scenarioMode, setScenarioMode }) {
   const modes = [
     { key: 'pilot', label: 'Pilot License' },
     { key: 'consortium', label: 'Consortium' },
@@ -458,24 +501,36 @@ function ScenariosTab({ state, calc, set, scenarioMode, setScenarioMode }) {
         ))}
       </div>
 
-      {scenarioMode === 'pilot' && <PilotPanel state={state} calc={calc} set={set} />}
-      {scenarioMode === 'consortium' && <ConsortiumPanel state={state} calc={calc} set={set} />}
-      {scenarioMode === 'sponsored' && <SponsoredPanel state={state} calc={calc} set={set} />}
+      {scenarioMode === 'pilot' && <PilotPanel state={state} set={set} />}
+      {scenarioMode === 'consortium' && <ConsortiumPanel state={state} set={set} />}
+      {scenarioMode === 'sponsored' && <SponsoredPanel state={state} set={set} />}
     </div>
   );
 }
 
-function PilotPanel({ state, calc, set }) {
+function PilotPanel({ state, set }) {
+  const pcalc = useMemo(() => computeCalc(state, modelOverrides(state, 'pilot')), [state]);
+
+  const pilotYr1Revenue = (pcalc.totalPartners - state.pilotPartners) * state.tierFees[0]
+    + state.pilotPartners * state.pilotFee
+    + pcalc.ippRevenue + pcalc.cohortRevenue + pcalc.certOverageRev + pcalc.grantRevenue;
+  const pilotYr1Margin = pilotYr1Revenue - pcalc.totalCost;
+  const pilotYr2Revenue = (pcalc.totalPartners - state.pilotPartners) * state.tierFees[0]
+    + state.pilotPartners * (state.pilotConvertPct / 100) * state.pilotFullFee
+    + pcalc.ippRevenue + pcalc.cohortRevenue + pcalc.certOverageRev + pcalc.grantRevenue;
+  const pilotYr2Margin = pilotYr2Revenue - pcalc.totalCost;
+  const pilotDrag = pcalc.totalRevenue - pilotYr1Revenue;
+
   const convData = useMemo(() => {
     const arr = [];
     for (let c = 0; c <= 100; c += 5) {
-      const yr2Rev = (calc.totalPartners - state.pilotPartners) * state.tierFees[0]
+      const yr2Rev = (pcalc.totalPartners - state.pilotPartners) * state.tierFees[0]
         + state.pilotPartners * (c / 100) * state.pilotFullFee
-        + calc.ippRevenue + calc.cohortRevenue + calc.certOverageRev + calc.grantRevenue;
-      arr.push({ rate: c, margin: yr2Rev - calc.totalCost });
+        + pcalc.ippRevenue + pcalc.cohortRevenue + pcalc.certOverageRev + pcalc.grantRevenue;
+      arr.push({ rate: c, margin: yr2Rev - pcalc.totalCost });
     }
     return arr;
-  }, [state, calc]);
+  }, [state, pcalc]);
 
   return (
     <div>
@@ -495,23 +550,25 @@ function PilotPanel({ state, calc, set }) {
         </div>
         <SliderField label="% pilots that convert" value={state.pilotConvertPct} min={0} max={100} onChange={v => set('pilotConvertPct', v)} unit="%" />
 
+        <PipelineRetentionInputs state={state} set={set} prefix="pilot" />
+
         <SectionDivider label="Results" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <Card style={{ background: GRAY50 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Year 1 with Pilots</div>
-            <div style={{ fontSize: 13 }}>Revenue: <strong>{fmt(calc.pilotYr1Revenue)}</strong></div>
-            <div style={{ fontSize: 13 }}>Cost: <strong>{fmt(calc.totalCost)}</strong></div>
-            <div style={{ fontSize: 13 }}>Margin: <strong style={{ color: calc.pilotYr1Margin >= 0 ? GREEN : RED }}>{fmt(calc.pilotYr1Margin)}</strong></div>
+            <div style={{ fontSize: 13 }}>Revenue: <strong>{fmt(pilotYr1Revenue)}</strong></div>
+            <div style={{ fontSize: 13 }}>Cost: <strong>{fmt(pcalc.totalCost)}</strong></div>
+            <div style={{ fontSize: 13 }}>Margin: <strong style={{ color: pilotYr1Margin >= 0 ? GREEN : RED }}>{fmt(pilotYr1Margin)}</strong></div>
           </Card>
           <Card style={{ background: GRAY50 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Year 2 After Conversion</div>
-            <div style={{ fontSize: 13 }}>Revenue: <strong>{fmt(calc.pilotYr2Revenue)}</strong></div>
-            <div style={{ fontSize: 13 }}>Cost: <strong>{fmt(calc.totalCost)}</strong></div>
-            <div style={{ fontSize: 13 }}>Margin: <strong style={{ color: calc.pilotYr2Margin >= 0 ? GREEN : RED }}>{fmt(calc.pilotYr2Margin)}</strong></div>
+            <div style={{ fontSize: 13 }}>Revenue: <strong>{fmt(pilotYr2Revenue)}</strong></div>
+            <div style={{ fontSize: 13 }}>Cost: <strong>{fmt(pcalc.totalCost)}</strong></div>
+            <div style={{ fontSize: 13 }}>Margin: <strong style={{ color: pilotYr2Margin >= 0 ? GREEN : RED }}>{fmt(pilotYr2Margin)}</strong></div>
           </Card>
         </div>
         <div style={{ background: '#faf5ff', border: `1px solid ${PURPLE}33`, borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 13 }}>
-          Pilot drag = <strong style={{ color: RED }}>{fmt(calc.pilotDrag)}</strong> vs. full-rate scenario
+          Pilot drag = <strong style={{ color: RED }}>{fmt(pilotDrag)}</strong> vs. full-rate scenario
         </div>
 
         <SectionDivider label="Conversion Sensitivity" />
@@ -532,8 +589,18 @@ function PilotPanel({ state, calc, set }) {
   );
 }
 
-function ConsortiumPanel({ state, calc, set }) {
-  const equivCohortCost = state.consortiumPartners * state.cohortsPerOrg * state.costPerCohort;
+function ConsortiumPanel({ state, set }) {
+  const ccalc = useMemo(() => computeCalc(state, modelOverrides(state, 'consortium')), [state]);
+
+  const consortiumRevenue = state.consortiumFee;
+  const consortiumCost = state.consortiumCohorts * state.costPerCohort;
+  const consortiumMargin = consortiumRevenue - consortiumCost;
+  const equivalentRevenue = state.consortiumPartners * state.tierFees[0];
+  const consortiumSaving = (equivalentRevenue - state.consortiumFee) / state.consortiumPartners;
+  const equivCohortCost = state.consortiumPartners * state.consortium_cohortsPerOrg * state.costPerCohort;
+
+  const overallRevenueWithConsortium = ccalc.totalRevenue - equivalentRevenue + consortiumRevenue;
+  const overallMarginWithConsortium = overallRevenueWithConsortium - ccalc.totalCost;
 
   return (
     <div>
@@ -550,35 +617,56 @@ function ConsortiumPanel({ state, calc, set }) {
         <SliderField label="Cohorts per consortium/yr" value={state.consortiumCohorts} min={1} max={6} onChange={v => set('consortiumCohorts', v)} note="Cost = cohorts × $300, not per partner" />
         <SliderField label="% that are net-new partners" value={state.consortiumNewPct} min={0} max={100} onChange={v => set('consortiumNewPct', v)} unit="%" />
 
+        <PipelineRetentionInputs state={state} set={set} prefix="consortium" />
+
         <SectionDivider label="Results" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <Card style={{ background: GRAY50 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Consortium</div>
-            <div style={{ fontSize: 13 }}>Total Fee: <strong>{fmt(calc.consortiumRevenue)}</strong></div>
-            <div style={{ fontSize: 13 }}>Cohort Cost: <strong>{fmt(calc.consortiumCost)}</strong></div>
-            <div style={{ fontSize: 13 }}>Net: <strong style={{ color: calc.consortiumMargin >= 0 ? GREEN : RED }}>{fmt(calc.consortiumMargin)}</strong></div>
+            <div style={{ fontSize: 13 }}>Total Fee: <strong>{fmt(consortiumRevenue)}</strong></div>
+            <div style={{ fontSize: 13 }}>Cohort Cost: <strong>{fmt(consortiumCost)}</strong></div>
+            <div style={{ fontSize: 13 }}>Net: <strong style={{ color: consortiumMargin >= 0 ? GREEN : RED }}>{fmt(consortiumMargin)}</strong></div>
             <div style={{ fontSize: 13, marginTop: 4 }}>Per-partner effective: <strong>{fmt(state.consortiumFee / state.consortiumPartners)}</strong></div>
           </Card>
           <Card style={{ background: GRAY50 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Equivalent Individual Licenses</div>
-            <div style={{ fontSize: 13 }}>Total: <strong>{fmt(calc.equivalentRevenue)}</strong></div>
+            <div style={{ fontSize: 13 }}>Total: <strong>{fmt(equivalentRevenue)}</strong></div>
             <div style={{ fontSize: 13 }}>Cohort Cost: <strong>{fmt(equivCohortCost)}</strong></div>
-            <div style={{ fontSize: 13 }}>Net: <strong style={{ color: calc.equivalentRevenue - equivCohortCost >= 0 ? GREEN : RED }}>{fmt(calc.equivalentRevenue - equivCohortCost)}</strong></div>
+            <div style={{ fontSize: 13 }}>Net: <strong style={{ color: equivalentRevenue - equivCohortCost >= 0 ? GREEN : RED }}>{fmt(equivalentRevenue - equivCohortCost)}</strong></div>
           </Card>
         </div>
         <div style={{ background: '#faf5ff', border: `1px solid ${PURPLE}33`, borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 13 }}>
-          <strong>{fmt(calc.consortiumSaving)}</strong> saved per partner vs. individual license
+          <strong>{fmt(consortiumSaving)}</strong> saved per partner vs. individual license
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
+          <Card style={{ background: GRAY50 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Overall Business w/ Consortium</div>
+            <div style={{ fontSize: 13 }}>Revenue: <strong>{fmt(overallRevenueWithConsortium)}</strong></div>
+            <div style={{ fontSize: 13 }}>Cost: <strong>{fmt(ccalc.totalCost)}</strong></div>
+            <div style={{ fontSize: 13 }}>Margin: <strong style={{ color: overallMarginWithConsortium >= 0 ? GREEN : RED }}>{fmt(overallMarginWithConsortium)}</strong></div>
+          </Card>
+          <Card style={{ background: GRAY50 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Overall Business w/o Consortium</div>
+            <div style={{ fontSize: 13 }}>Revenue: <strong>{fmt(ccalc.totalRevenue)}</strong></div>
+            <div style={{ fontSize: 13 }}>Cost: <strong>{fmt(ccalc.totalCost)}</strong></div>
+            <div style={{ fontSize: 13 }}>Margin: <strong style={{ color: ccalc.netMargin >= 0 ? GREEN : RED }}>{fmt(ccalc.netMargin)}</strong></div>
+          </Card>
         </div>
         <div style={{ fontSize: 12, color: GRAY500, fontStyle: 'italic', marginTop: 8 }}>
-          Consortium reduces per-partner cost but may reduce total revenue if group size is small.
+          Consortium reduces per-partner cost but may reduce total revenue if group size is small. Overall business figures reflect this model's pipeline &amp; retention assumptions.
         </div>
       </Card>
     </div>
   );
 }
 
-function SponsoredPanel({ state, calc, set }) {
-  const diff = Math.abs(calc.sponsoredCWPMargin - calc.sponsoredFunderMargin);
+function SponsoredPanel({ state, set }) {
+  const scalc = useMemo(() => computeCalc(state, modelOverrides(state, 'sponsored')), [state]);
+
+  const sponsoredGap = (state.sponsoredListPrice - state.sponsoredFee) * state.sponsoredPartners;
+  const sponsoredCWPMargin = scalc.netMargin - sponsoredGap;
+  const sponsoredFunderMargin = scalc.netMargin;
+  const diff = Math.abs(sponsoredCWPMargin - sponsoredFunderMargin);
 
   return (
     <div>
@@ -606,17 +694,19 @@ function SponsoredPanel({ state, calc, set }) {
         <SliderField label="Sponsored partners" value={state.sponsoredPartners} min={0} max={10} onChange={v => set('sponsoredPartners', v)} />
         <SliderField label="Grant revenue tied to sponsorship" value={state.sponsoredGrant} min={0} max={100000} step={500} onChange={v => set('sponsoredGrant', v)} prefix="$" />
 
+        <PipelineRetentionInputs state={state} set={set} prefix="sponsored" />
+
         <SectionDivider label="Results" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <Card style={{ background: GRAY50 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>CWP Absorbs Gap</div>
-            <div style={{ fontSize: 13 }}>Gap (subsidy cost): <strong style={{ color: RED }}>{fmt(calc.sponsoredGap)}</strong></div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>Net Margin: <strong style={{ color: calc.sponsoredCWPMargin >= 0 ? GREEN : RED }}>{fmt(calc.sponsoredCWPMargin)}</strong></div>
+            <div style={{ fontSize: 13 }}>Gap (subsidy cost): <strong style={{ color: RED }}>{fmt(sponsoredGap)}</strong></div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>Net Margin: <strong style={{ color: sponsoredCWPMargin >= 0 ? GREEN : RED }}>{fmt(sponsoredCWPMargin)}</strong></div>
           </Card>
           <Card style={{ background: GRAY50 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{state.sponsoredFunderName} Covers Gap</div>
-            <div style={{ fontSize: 13 }}>Gap as external revenue: <strong style={{ color: GREEN }}>{fmt(calc.sponsoredGap)}</strong></div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>Net Margin: <strong style={{ color: calc.sponsoredFunderMargin >= 0 ? GREEN : RED }}>{fmt(calc.sponsoredFunderMargin)}</strong></div>
+            <div style={{ fontSize: 13 }}>Gap as external revenue: <strong style={{ color: GREEN }}>{fmt(sponsoredGap)}</strong></div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>Net Margin: <strong style={{ color: sponsoredFunderMargin >= 0 ? GREEN : RED }}>{fmt(sponsoredFunderMargin)}</strong></div>
           </Card>
         </div>
         <div style={{ background: '#faf5ff', border: `1px solid ${PURPLE}33`, borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 13, textAlign: 'center' }}>
