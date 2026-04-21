@@ -73,30 +73,15 @@ const defaults = {
   sponsoredGrant: 0,
   sponsoredFunderName: 'Funder',
 
-  // Per-model pipeline & retention overrides (independent of "current view" values)
-  pilot_newIPPInstructors: 5,
-  pilot_pctIPPtoLicense: 60,
-  pilot_pctLicenseToActive: 75,
-  pilot_cohortsPerOrg: 1,
-  pilot_avgParticipants: 12,
-  pilot_renewalRate: 85,
-  pilot_dormantRate: 15,
-
-  consortium_newIPPInstructors: 5,
-  consortium_pctIPPtoLicense: 60,
-  consortium_pctLicenseToActive: 75,
-  consortium_cohortsPerOrg: 1,
-  consortium_avgParticipants: 12,
-  consortium_renewalRate: 85,
-  consortium_dormantRate: 15,
-
-  sponsored_newIPPInstructors: 5,
-  sponsored_pctIPPtoLicense: 60,
-  sponsored_pctLicenseToActive: 75,
-  sponsored_cohortsPerOrg: 1,
-  sponsored_avgParticipants: 12,
-  sponsored_renewalRate: 85,
-  sponsored_dormantRate: 15,
+  // Shared pipeline & retention used by all scenario models (independent of current view)
+  model_newIPPInstructors: 5,
+  model_feeIPP: 2000,
+  model_pctIPPtoLicense: 60,
+  model_pctLicenseToActive: 75,
+  model_cohortsPerOrg: 1,
+  model_avgParticipants: 12,
+  model_renewalRate: 85,
+  model_dormantRate: 15,
 };
 
 // ─── FORMATTERS ───
@@ -224,22 +209,71 @@ const Card = ({ children, style }) => (
   </div>
 );
 
-const PipelineRetentionInputs = ({ state, set, prefix }) => {
-  const k = (name) => `${prefix}_${name}`;
+const NumberField = ({ label, value, onChange, min, max, step = 1, prefix, unit }) => {
+  const [local, setLocal] = React.useState(String(value));
+  React.useEffect(() => { setLocal(String(value)); }, [value]);
+
+  const handleBlur = () => {
+    let v = Number(local);
+    if (isNaN(v)) v = min ?? 0;
+    if (min != null) v = Math.max(min, v);
+    if (max != null) v = Math.min(max, v);
+    setLocal(String(v));
+    onChange(v);
+  };
+
   return (
-    <>
-      <SectionDivider label="Pipeline & Retention (model-specific)" />
-      <div style={{ fontSize: 12, color: GRAY500, fontStyle: 'italic', marginBottom: 12 }}>
-        These inputs are independent of the Pipeline and Costs tabs — adjust them to see how this scenario changes with different funnel and retention assumptions.
+    <div>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: GRAY700, marginBottom: 4 }}>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${GRAY200}`, borderRadius: 8, padding: '6px 10px', background: 'white' }}>
+        {prefix && <span style={{ fontSize: 14, color: GRAY500 }}>{prefix}</span>}
+        <input
+          type="number"
+          value={local}
+          step={step}
+          onChange={e => setLocal(e.target.value)}
+          onBlur={handleBlur}
+          style={{ flex: 1, border: 'none', outline: 'none', fontSize: 16, fontWeight: 700, color: GRAY900, textAlign: 'right', background: 'transparent', width: '100%' }}
+        />
+        {unit && <span style={{ fontSize: 14, color: GRAY500 }}>{unit}</span>}
       </div>
-      <SliderField label="New IPP instructors this cycle" value={state[k('newIPPInstructors')]} min={0} max={30} onChange={v => set(k('newIPPInstructors'), v)} />
-      <SliderField label="% IPP → licensed org" value={state[k('pctIPPtoLicense')]} min={0} max={100} onChange={v => set(k('pctIPPtoLicense'), v)} unit="%" />
-      <SliderField label="% licensed orgs → run ≥1 cohort/yr" value={state[k('pctLicenseToActive')]} min={0} max={100} onChange={v => set(k('pctLicenseToActive'), v)} unit="%" />
-      <SliderField label="Cohorts per active org/yr" value={state[k('cohortsPerOrg')]} min={1} max={6} onChange={v => set(k('cohortsPerOrg'), v)} />
-      <SliderField label="Avg participants per cohort" value={state[k('avgParticipants')]} min={1} max={15} onChange={v => set(k('avgParticipants'), v)} />
-      <SliderField label="License renewal rate" value={state[k('renewalRate')]} min={0} max={100} onChange={v => set(k('renewalRate'), v)} unit="%" />
-      <SliderField label="Dormant partner rate" value={state[k('dormantRate')]} min={0} max={100} onChange={v => set(k('dormantRate'), v)} unit="%" />
-    </>
+    </div>
+  );
+};
+
+const ModelPipelineRetentionCard = ({ state, set }) => {
+  const totalPartners = state.partnerCounts.reduce((a, b) => a + b, 0);
+  const effectivePartners = totalPartners * (state.model_renewalRate / 100) * (1 - state.model_dormantRate / 100);
+  const activeOrgs = effectivePartners * (state.model_pctLicenseToActive / 100);
+  const cohortsPerYr = activeOrgs * state.model_cohortsPerOrg;
+  const ippRev = state.model_newIPPInstructors * state.model_feeIPP;
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: GRAY900, marginBottom: 14 }}>Pipeline & Retention</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+        <NumberField label="New IPP instructors/yr" value={state.model_newIPPInstructors} min={0} max={100} onChange={v => set('model_newIPPInstructors', v)} />
+        <NumberField label="IPP fee" value={state.model_feeIPP} min={0} max={10000} step={100} prefix="$" onChange={v => set('model_feeIPP', v)} />
+        <NumberField label="% IPP to licensed" value={state.model_pctIPPtoLicense} min={0} max={100} unit="%" onChange={v => set('model_pctIPPtoLicense', v)} />
+        <NumberField label="% running cohorts" value={state.model_pctLicenseToActive} min={0} max={100} unit="%" onChange={v => set('model_pctLicenseToActive', v)} />
+        <NumberField label="Cohorts per org/yr" value={state.model_cohortsPerOrg} min={0} max={10} step={0.25} onChange={v => set('model_cohortsPerOrg', v)} />
+        <NumberField label="Avg participants" value={state.model_avgParticipants} min={1} max={15} onChange={v => set('model_avgParticipants', v)} />
+        <NumberField label="Renewal rate" value={state.model_renewalRate} min={0} max={100} unit="%" onChange={v => set('model_renewalRate', v)} />
+        <NumberField label="Dormant rate" value={state.model_dormantRate} min={0} max={100} unit="%" onChange={v => set('model_dormantRate', v)} />
+      </div>
+      <div style={{ display: 'flex', gap: 32, paddingTop: 12, borderTop: `1px solid ${GRAY200}` }}>
+        <div>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: GRAY500 }}>IPP Revenue</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: GREEN }}>{fmt(ippRev)}</div>
+          <div style={{ fontSize: 11, color: GRAY500 }}>{state.model_newIPPInstructors} instructors × {fmt(state.model_feeIPP)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: GRAY500 }}>Cohorts/Yr</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: BLUE }}>{cohortsPerYr.toFixed(1)}</div>
+          <div style={{ fontSize: 11, color: GRAY500 }}>{activeOrgs.toFixed(1)} active orgs × {state.model_cohortsPerOrg}</div>
+        </div>
+      </div>
+    </Card>
   );
 };
 
@@ -254,6 +288,7 @@ const computeCalc = (state, overrides = {}) => {
     avgParticipants: s.avgParticipants,
     renewalRate: s.renewalRate,
     dormantRate: s.dormantRate,
+    feeIPP: s.feeIPP,
     ...overrides,
   };
 
@@ -274,7 +309,7 @@ const computeCalc = (state, overrides = {}) => {
   const certsIssued = totalParticipants;
   const certOverages = Math.max(0, certsIssued - certsIncluded);
 
-  const ippRevenue = p.newIPPInstructors * s.feeIPP;
+  const ippRevenue = p.newIPPInstructors * p.feeIPP;
   const cohortRevenue = totalCohorts * s.feeCohort;
   const certOverageRev = certOverages * s.feeCertOverage;
   const grantRevenue = s.feeGrant;
@@ -292,7 +327,7 @@ const computeCalc = (state, overrides = {}) => {
   const stabilityScore = totalRevenue > 0 ? recurringRevenue / totalRevenue : 0;
 
   const netPerPartner = s.tierFees[0]
-    + TIERS[0].instructors * (p.newIPPInstructors / Math.max(totalPartners, 1)) * s.feeIPP
+    + TIERS[0].instructors * (p.newIPPInstructors / Math.max(totalPartners, 1)) * p.feeIPP
     - p.cohortsPerOrg * (p.pctLicenseToActive / 100) * s.feeCohort
     - p.cohortsPerOrg * (p.pctLicenseToActive / 100) * s.costPerCohort
     - TIERS[0].instructors * (p.newIPPInstructors / Math.max(totalPartners, 1)) * s.costPerIPP;
@@ -312,15 +347,16 @@ const computeCalc = (state, overrides = {}) => {
   };
 };
 
-// Pull model-specific pipeline/retention overrides out of state by prefix
-const modelOverrides = (state, prefix) => ({
-  newIPPInstructors: state[`${prefix}_newIPPInstructors`],
-  pctIPPtoLicense: state[`${prefix}_pctIPPtoLicense`],
-  pctLicenseToActive: state[`${prefix}_pctLicenseToActive`],
-  cohortsPerOrg: state[`${prefix}_cohortsPerOrg`],
-  avgParticipants: state[`${prefix}_avgParticipants`],
-  renewalRate: state[`${prefix}_renewalRate`],
-  dormantRate: state[`${prefix}_dormantRate`],
+// Shared pipeline/retention overrides used by all scenario models
+const modelOverrides = (state) => ({
+  newIPPInstructors: state.model_newIPPInstructors,
+  feeIPP: state.model_feeIPP,
+  pctIPPtoLicense: state.model_pctIPPtoLicense,
+  pctLicenseToActive: state.model_pctLicenseToActive,
+  cohortsPerOrg: state.model_cohortsPerOrg,
+  avgParticipants: state.model_avgParticipants,
+  renewalRate: state.model_renewalRate,
+  dormantRate: state.model_dormantRate,
 });
 
 // ─── TABS ───
@@ -488,6 +524,8 @@ function ScenariosTab({ state, set, scenarioMode, setScenarioMode }) {
 
   return (
     <div>
+      <ModelPipelineRetentionCard state={state} set={set} />
+
       {/* Segmented control */}
       <div style={{ display: 'flex', gap: 0, background: GRAY100, borderRadius: 8, padding: 3, marginBottom: 20, border: `1px solid ${GRAY200}` }}>
         {modes.map(m => (
@@ -509,7 +547,7 @@ function ScenariosTab({ state, set, scenarioMode, setScenarioMode }) {
 }
 
 function PilotPanel({ state, set }) {
-  const pcalc = useMemo(() => computeCalc(state, modelOverrides(state, 'pilot')), [state]);
+  const pcalc = useMemo(() => computeCalc(state, modelOverrides(state)), [state]);
 
   const pilotYr1Revenue = (pcalc.totalPartners - state.pilotPartners) * state.tierFees[0]
     + state.pilotPartners * state.pilotFee
@@ -550,8 +588,6 @@ function PilotPanel({ state, set }) {
         </div>
         <SliderField label="% pilots that convert" value={state.pilotConvertPct} min={0} max={100} onChange={v => set('pilotConvertPct', v)} unit="%" />
 
-        <PipelineRetentionInputs state={state} set={set} prefix="pilot" />
-
         <SectionDivider label="Results" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <Card style={{ background: GRAY50 }}>
@@ -590,14 +626,14 @@ function PilotPanel({ state, set }) {
 }
 
 function ConsortiumPanel({ state, set }) {
-  const ccalc = useMemo(() => computeCalc(state, modelOverrides(state, 'consortium')), [state]);
+  const ccalc = useMemo(() => computeCalc(state, modelOverrides(state)), [state]);
 
   const consortiumRevenue = state.consortiumFee;
   const consortiumCost = state.consortiumCohorts * state.costPerCohort;
   const consortiumMargin = consortiumRevenue - consortiumCost;
   const equivalentRevenue = state.consortiumPartners * state.tierFees[0];
   const consortiumSaving = (equivalentRevenue - state.consortiumFee) / state.consortiumPartners;
-  const equivCohortCost = state.consortiumPartners * state.consortium_cohortsPerOrg * state.costPerCohort;
+  const equivCohortCost = state.consortiumPartners * state.model_cohortsPerOrg * state.costPerCohort;
 
   const overallRevenueWithConsortium = ccalc.totalRevenue - equivalentRevenue + consortiumRevenue;
   const overallMarginWithConsortium = overallRevenueWithConsortium - ccalc.totalCost;
@@ -616,8 +652,6 @@ function ConsortiumPanel({ state, set }) {
         <SliderField label="Partners in consortium" value={state.consortiumPartners} min={2} max={10} onChange={v => set('consortiumPartners', v)} />
         <SliderField label="Cohorts per consortium/yr" value={state.consortiumCohorts} min={1} max={6} onChange={v => set('consortiumCohorts', v)} note="Cost = cohorts × $300, not per partner" />
         <SliderField label="% that are net-new partners" value={state.consortiumNewPct} min={0} max={100} onChange={v => set('consortiumNewPct', v)} unit="%" />
-
-        <PipelineRetentionInputs state={state} set={set} prefix="consortium" />
 
         <SectionDivider label="Results" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -661,7 +695,7 @@ function ConsortiumPanel({ state, set }) {
 }
 
 function SponsoredPanel({ state, set }) {
-  const scalc = useMemo(() => computeCalc(state, modelOverrides(state, 'sponsored')), [state]);
+  const scalc = useMemo(() => computeCalc(state, modelOverrides(state)), [state]);
 
   const sponsoredGap = (state.sponsoredListPrice - state.sponsoredFee) * state.sponsoredPartners;
   const sponsoredCWPMargin = scalc.netMargin - sponsoredGap;
@@ -693,8 +727,6 @@ function SponsoredPanel({ state, set }) {
         </div>
         <SliderField label="Sponsored partners" value={state.sponsoredPartners} min={0} max={10} onChange={v => set('sponsoredPartners', v)} />
         <SliderField label="Grant revenue tied to sponsorship" value={state.sponsoredGrant} min={0} max={100000} step={500} onChange={v => set('sponsoredGrant', v)} prefix="$" />
-
-        <PipelineRetentionInputs state={state} set={set} prefix="sponsored" />
 
         <SectionDivider label="Results" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
