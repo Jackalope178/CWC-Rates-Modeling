@@ -275,6 +275,36 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
+function PipelineRetentionCard({ state, calc, set }) {
+  return (
+    <Card>
+      <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+        <InputField label="New IPP instructors/yr" value={state.newIPPInstructors} min={0} max={50} onChange={v=>set('newIPPInstructors',v)} />
+        <InputField label="IPP fee" value={state.feeIPP} min={0} max={10000} step={100} onChange={v=>set('feeIPP',v)} prefix="$" />
+        <InputField label="% IPP to licensed" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
+        <InputField label="% running cohorts" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
+        <InputField label="Cohorts per org/yr" value={state.cohortsPerOrg} min={1} max={10} onChange={v=>set('cohortsPerOrg',v)} />
+        <InputField label="Avg participants" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
+        <InputField label="Renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
+        <InputField label="Dormant rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" />
+      </div>
+      <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, flexWrap:'wrap' }}>
+        <div>
+          <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>IPP Revenue</div>
+          <div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.ippRevenue)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{state.newIPPInstructors} instructors × {fmt(state.feeIPP)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Cohorts/yr</div>
+          <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{calc.totalCohorts.toFixed(1)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{calc.activeCohortOrgs.toFixed(1)} active orgs × {state.cohortsPerOrg}</div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 const TABS = ['Current State','What If','5-Year Outlook','Break-Even Analysis'];
 
 // Synchronous localStorage persistence so inputs survive refresh without waiting
@@ -694,31 +724,7 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
               <div style={{ fontSize:11, color:GRAY500 }}>Each partner includes 15 certs. Enter the fee and count you expect to actually charge beyond that.</div>
             </div>
           </Card>
-          <Card>
-            <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-              <InputField label="New IPP instructors/yr" value={state.newIPPInstructors} min={0} max={50} onChange={v=>set('newIPPInstructors',v)} />
-              <InputField label="IPP fee" value={state.feeIPP} min={0} max={10000} step={100} onChange={v=>set('feeIPP',v)} prefix="$" />
-              <InputField label="% IPP to licensed" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
-              <InputField label="% running cohorts" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
-              <InputField label="Cohorts per org/yr" value={state.cohortsPerOrg} min={1} max={10} onChange={v=>set('cohortsPerOrg',v)} />
-              <InputField label="Avg participants" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
-              <InputField label="Renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
-              <InputField label="Dormant rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" />
-            </div>
-            <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, flexWrap:'wrap' }}>
-              <div>
-                <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>IPP Revenue</div>
-                <div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.ippRevenue)}</div>
-                <div style={{ fontSize:10, color:GRAY500 }}>{state.newIPPInstructors} instructors × {fmt(state.feeIPP)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Cohorts/yr</div>
-                <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{calc.totalCohorts.toFixed(1)}</div>
-                <div style={{ fontSize:10, color:GRAY500 }}>{calc.activeCohortOrgs.toFixed(1)} active orgs × {state.cohortsPerOrg}</div>
-              </div>
-            </div>
-          </Card>
+          <PipelineRetentionCard state={state} calc={calc} set={set} />
         </div>
 
         {/* RIGHT: Per-Event Costs + Revenue Fees + Funders */}
@@ -863,6 +869,11 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
   return (
     <div>
       <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Design a new pricing structure. Compare against the current instructor-tier model side by side.</div>
+
+      <div style={{ marginBottom:16 }}>
+        <PipelineRetentionCard state={state} calc={calc} set={set} />
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Shared with Current State — edits here affect both tabs and feed Model A / Model B projections below.</div>
+      </div>
 
       {/* Model selector */}
       <div style={{ display:'flex', gap:0, background:GRAY100, borderRadius:8, padding:3, marginBottom:20, border:'1px solid '+GRAY200 }}>
