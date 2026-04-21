@@ -119,6 +119,11 @@ const defaults = {
   // --- CURRENT STATE: pipeline ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
+  // --- WHAT IF (MODELS): pipeline ---
+  // Separate pipeline/retention set used only to drive Model A / Model B on the What If tab.
+  model_newIPPInstructors: 5, model_pctIPPtoLicense: 60, model_pctLicenseToActive: 75,
+  model_cohortsPerOrg: 1, model_avgParticipants: 12, model_renewalRate: 85, model_dormantRate: 15,
+  model_feeIPP: 2000,
   // --- MODEL A: Per-Cohort Pricing ---
   modelA_annualFee: 1000,
   modelA_smallCohortFee: 800,
@@ -275,30 +280,36 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
-function PipelineRetentionCard({ state, calc, set }) {
+function PipelineRetentionCard({ state, calc, set, prefix='' }) {
+  const k = (name) => prefix + name;
+  const totalPartners = calc.totalPartners;
+  const effP = totalPartners * (state[k('renewalRate')]/100) * (1 - state[k('dormantRate')]/100);
+  const actOrgs = effP * (state[k('pctLicenseToActive')]/100);
+  const cohorts = actOrgs * state[k('cohortsPerOrg')];
+  const ippRev = state[k('newIPPInstructors')] * state[k('feeIPP')];
   return (
     <Card>
       <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-        <InputField label="New IPP instructors/yr" value={state.newIPPInstructors} min={0} max={50} onChange={v=>set('newIPPInstructors',v)} />
-        <InputField label="IPP fee" value={state.feeIPP} min={0} max={10000} step={100} onChange={v=>set('feeIPP',v)} prefix="$" />
-        <InputField label="% IPP to licensed" value={state.pctIPPtoLicense} min={0} max={100} onChange={v=>set('pctIPPtoLicense',v)} unit="%" />
-        <InputField label="% running cohorts" value={state.pctLicenseToActive} min={0} max={100} onChange={v=>set('pctLicenseToActive',v)} unit="%" />
-        <InputField label="Cohorts per org/yr" value={state.cohortsPerOrg} min={1} max={10} onChange={v=>set('cohortsPerOrg',v)} />
-        <InputField label="Avg participants" value={state.avgParticipants} min={1} max={15} onChange={v=>set('avgParticipants',v)} />
-        <InputField label="Renewal rate" value={state.renewalRate} min={0} max={100} onChange={v=>set('renewalRate',v)} unit="%" />
-        <InputField label="Dormant rate" value={state.dormantRate} min={0} max={100} onChange={v=>set('dormantRate',v)} unit="%" />
+        <InputField label="New IPP instructors/yr" value={state[k('newIPPInstructors')]} min={0} max={50} onChange={v=>set(k('newIPPInstructors'),v)} />
+        <InputField label="IPP fee" value={state[k('feeIPP')]} min={0} max={10000} step={100} onChange={v=>set(k('feeIPP'),v)} prefix="$" />
+        <InputField label="% IPP to licensed" value={state[k('pctIPPtoLicense')]} min={0} max={100} onChange={v=>set(k('pctIPPtoLicense'),v)} unit="%" />
+        <InputField label="% running cohorts" value={state[k('pctLicenseToActive')]} min={0} max={100} onChange={v=>set(k('pctLicenseToActive'),v)} unit="%" />
+        <InputField label="Cohorts per org/yr" value={state[k('cohortsPerOrg')]} min={1} max={10} onChange={v=>set(k('cohortsPerOrg'),v)} />
+        <InputField label="Avg participants" value={state[k('avgParticipants')]} min={1} max={15} onChange={v=>set(k('avgParticipants'),v)} />
+        <InputField label="Renewal rate" value={state[k('renewalRate')]} min={0} max={100} onChange={v=>set(k('renewalRate'),v)} unit="%" />
+        <InputField label="Dormant rate" value={state[k('dormantRate')]} min={0} max={100} onChange={v=>set(k('dormantRate'),v)} unit="%" />
       </div>
       <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, flexWrap:'wrap' }}>
         <div>
           <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>IPP Revenue</div>
-          <div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(calc.ippRevenue)}</div>
-          <div style={{ fontSize:10, color:GRAY500 }}>{state.newIPPInstructors} instructors × {fmt(state.feeIPP)}</div>
+          <div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(ippRev)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{state[k('newIPPInstructors')]} instructors × {fmt(state[k('feeIPP')])}</div>
         </div>
         <div>
           <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Cohorts/yr</div>
-          <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{calc.totalCohorts.toFixed(1)}</div>
-          <div style={{ fontSize:10, color:GRAY500 }}>{calc.activeCohortOrgs.toFixed(1)} active orgs × {state.cohortsPerOrg}</div>
+          <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{cohorts.toFixed(1)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{actOrgs.toFixed(1)} active orgs × {state[k('cohortsPerOrg')]}</div>
         </div>
       </div>
     </Card>
@@ -452,16 +463,30 @@ function App() {
     const currentContribution = totalRevenue - variableCostTotal;
     const currentNetAfterFunders = currentContribution - fixedGap;
 
+    // ── Model-specific pipeline/retention (What If tab) ──
+    // Model A/B use a separate set of pipeline/retention assumptions so the user can
+    // explore "what if the funnel/retention were different" without disturbing Current State.
+    const modelEffP = totalPartners * (s.model_renewalRate/100) * (1 - s.model_dormantRate/100);
+    const modelActOrgs = modelEffP * (s.model_pctLicenseToActive/100);
+    const modelTotalCohorts = modelActOrgs * s.model_cohortsPerOrg;
+    const modelTotalParticipants = modelTotalCohorts * s.model_avgParticipants;
+    const modelCertsIssued = modelTotalParticipants;
+    const modelIppRevenue = s.model_newIPPInstructors * s.model_feeIPP;
+    const modelIppCost = s.model_newIPPInstructors * s.costPerIPP;
+    const modelCohortCost = modelTotalCohorts * s.costPerCohort;
+    const modelCertCost = modelCertsIssued * (s.costPerCert || 0);
+    const modelVariableCostTotal = modelIppCost + modelCohortCost + partnerCostTotal + modelCertCost;
+
     // Model A revenue
-    const maSmall = Math.round(totalCohorts*(s.modelA_pctSmall/100));
-    const maLarge = Math.round(totalCohorts*(1-s.modelA_pctSmall/100));
+    const maSmall = Math.round(modelTotalCohorts*(s.modelA_pctSmall/100));
+    const maLarge = Math.round(modelTotalCohorts*(1-s.modelA_pctSmall/100));
     const maAnnualRev = totalPartners * s.modelA_annualFee;
     const maCohortRev = maSmall * s.modelA_smallCohortFee + maLarge * s.modelA_largeCohortFee;
-    let maTotalRev = maAnnualRev + maCohortRev + ippRevenue + grantRevenue;
+    let maTotalRev = maAnnualRev + maCohortRev + modelIppRevenue + grantRevenue;
     let maPilotDrag = 0;
     if (s.modelA_pilotEnabled) {
       const pp = Math.min(s.modelA_pilotPartners, totalPartners);
-      maPilotDrag = pp * (s.modelA_annualFee - s.modelA_pilotFee) + pp * s.cohortsPerOrg * (s.modelA_largeCohortFee - s.modelA_pilotCohortFee);
+      maPilotDrag = pp * (s.modelA_annualFee - s.modelA_pilotFee) + pp * s.model_cohortsPerOrg * (s.modelA_largeCohortFee - s.modelA_pilotCohortFee);
       maTotalRev -= maPilotDrag;
     }
     const maNetMargin = maTotalRev - totalCost;
@@ -477,10 +502,10 @@ function App() {
     const mbGrowthTotal = s.modelB_baseLicense + Math.max(0, s.modelB_growthCohorts - 1) * s.modelB_growthPerCohort;
     const mbPkgRev = mbStarter*mbStarterTotal + mbStandard*mbStandardTotal + mbGrowth*mbGrowthTotal;
     const mbIncludedCohorts = mbStarter*s.modelB_starterCohorts + mbStandard*s.modelB_standardCohorts + mbGrowth*s.modelB_growthCohorts;
-    const mbAddOnCohorts = Math.max(0, totalCohorts - mbIncludedCohorts);
+    const mbAddOnCohorts = Math.max(0, modelTotalCohorts - mbIncludedCohorts);
     const mbAddOnRev = mbAddOnCohorts * s.modelB_addOnCohortFee;
     const mbRev = mbPkgRev + mbAddOnRev;
-    let mbTotalRev = mbRev + ippRevenue + grantRevenue;
+    let mbTotalRev = mbRev + modelIppRevenue + grantRevenue;
     let mbPilotDrag = 0;
     if (s.modelB_pilotEnabled) {
       const pp = Math.min(s.modelB_pilotPartners, totalPartners);
@@ -489,9 +514,9 @@ function App() {
       mbTotalRev -= mbPilotDrag;
     }
     const mbNetMargin = mbTotalRev - totalCost;
-    const maContribution = maTotalRev - variableCostTotal;
+    const maContribution = maTotalRev - modelVariableCostTotal;
     const maNetAfterFunders = maContribution - fixedGap;
-    const mbContribution = mbTotalRev - variableCostTotal;
+    const mbContribution = mbTotalRev - modelVariableCostTotal;
     const mbNetAfterFunders = mbContribution - fixedGap;
 
     return { fixedTotal, budgetByArea, budgetBySubCategory, totalPartners, totalInstructors, licenseRevenue, effectivePartners,
@@ -840,16 +865,18 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
   const s = state;
   const c = calc;
 
-  // Comparison chart data
+  // Comparison chart data. Current line uses Current State P&R; Model A/B use What If (model_*) P&R.
   const compData = useMemo(() => {
     const arr = [];
     for (let p=1; p<=25; p++) {
-      const effP = p*(s.renewalRate/100)*(1-s.dormantRate/100);
-      const actOrgs = effP*(s.pctLicenseToActive/100);
-      const coh = actOrgs*s.cohortsPerOrg;
-      const parts = coh*s.avgParticipants;
-      // Current
-      const currRev = p*s.tierFees[0] + coh*s.feeCohort + Math.max(0,parts-p*15)*s.feeCertOverage;
+      // Current line: Current State pipeline/retention
+      const cEffP = p*(s.renewalRate/100)*(1-s.dormantRate/100);
+      const cCoh = cEffP*(s.pctLicenseToActive/100)*s.cohortsPerOrg;
+      const cParts = cCoh*s.avgParticipants;
+      const currRev = p*s.tierFees[0] + cCoh*s.feeCohort + Math.max(0,cParts-p*15)*s.feeCertOverage;
+      // Models: What If pipeline/retention
+      const mEffP = p*(s.model_renewalRate/100)*(1-s.model_dormantRate/100);
+      const coh = mEffP*(s.model_pctLicenseToActive/100)*s.model_cohortsPerOrg;
       // Model A
       const maSmall=Math.round(coh*(s.modelA_pctSmall/100)), maLarge=Math.round(coh*(1-s.modelA_pctSmall/100));
       const maRev = p*s.modelA_annualFee + maSmall*s.modelA_smallCohortFee + maLarge*s.modelA_largeCohortFee;
@@ -871,8 +898,8 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
       <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Design a new pricing structure. Compare against the current instructor-tier model side by side.</div>
 
       <div style={{ marginBottom:16 }}>
-        <PipelineRetentionCard state={state} calc={calc} set={set} />
-        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Shared with Current State — edits here affect both tabs and feed Model A / Model B projections below.</div>
+        <PipelineRetentionCard state={state} calc={calc} set={set} prefix="model_" />
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Separate from Current State — these assumptions drive Model A and Model B only. Current State stays on its own pipeline/retention.</div>
       </div>
 
       {/* Model selector */}
