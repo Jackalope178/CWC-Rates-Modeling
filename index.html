@@ -102,6 +102,29 @@ const DEFAULT_BUDGET_LINES = [
   { id: 14, programArea:'Outreach & Marketing',       subCategory:'Travel',       detail:'SBN conference',                 amount:110 },
 ];
 
+// ─── REGIME PRESETS (Pre-LMS vs Post-LMS) ───
+// Captures the structural shift in IPP→license conversion that occurred mid-2024
+// when the LMS migration + staff transition happened. Pre-LMS reflects historical
+// patterns; Post-LMS reflects the limited 2024-2025 data on the new model.
+const REGIME_PRESETS = {
+  'pre-LMS': {
+    pct_convert_year_1: 75,
+    pct_convert_year_2: 18,
+    pct_convert_year_3plus: 2,
+    pct_convert_never: 5,
+    year_1_renewal_rate: 80,
+    year_2plus_renewal_rate: 90,
+  },
+  'post-LMS': {
+    pct_convert_year_1: 25,
+    pct_convert_year_2: 40,
+    pct_convert_year_3plus: 10,
+    pct_convert_never: 25,
+    year_1_renewal_rate: 70,
+    year_2plus_renewal_rate: 87,
+  },
+};
+
 const defaults = {
   // --- CURRENT STATE: partners ---
   partnerCounts: [5, 0, 0, 0, 0, 0, 0],
@@ -116,14 +139,83 @@ const defaults = {
   anticipatedCertFee: 50,
   anticipatedCertCount: 0,
   funders: [],
-  // --- CURRENT STATE: pipeline ---
+  // --- CURRENT STATE: pipeline (legacy flat, retained for back-compat / migration) ---
   newIPPInstructors: 5, pctIPPtoLicense: 60, pctLicenseToActive: 75,
   cohortsPerOrg: 1, avgParticipants: 12, renewalRate: 85, dormantRate: 15,
-  // --- WHAT IF (MODELS): pipeline ---
-  // Separate pipeline/retention set used only to drive Model A / Model B on the What If tab.
+  // --- WHAT IF (MODELS): pipeline (legacy flat, retained for back-compat / migration) ---
   model_newIPPInstructors: 5, model_pctIPPtoLicense: 60, model_pctLicenseToActive: 75,
   model_cohortsPerOrg: 1, model_avgParticipants: 12, model_renewalRate: 85, model_dormantRate: 15,
   model_feeIPP: 2000,
+  // ─── STRUCTURED PIPELINE & RETENTION (new in restructure) ───
+  // Each variable group exists for both Current State (no prefix) and What If (model_ prefix)
+  // so the user can edit them independently. The legacy flat vars above are now
+  // *derived outputs* of these structured inputs, used only for display continuity.
+
+  // [A] IPP Pipeline — who actually enters the conversion funnel
+  ipp_participants: 6,                   // total IPP seats per year
+  pct_ipp_cwp_staff: 15,                 // % seats taken by CWP staff (excluded from convertible)
+  pct_ipp_individual: 5,                 // % seats taken by individuals who can't license an org
+  orgs_per_ipp_participant: 0.75,        // orgs / participant ratio (some orgs send 2-3 people)
+
+  // IPP→License timing buckets (sum to 100 — UI enforces)
+  // year_1 = within 12 months; year_2 = 12-24 months; year_3plus = after 24 months; never = walks away
+  pct_convert_year_1: 25,
+  pct_convert_year_2: 40,
+  pct_convert_year_3plus: 10,
+  pct_convert_never: 25,
+
+  // [B] License Activation
+  pct_activate_year_1: 80,               // % of newly licensed orgs that run >=1 cohort in year 1
+  months_to_first_cohort: 4,             // average lag for activators (planning display only)
+
+  // [C] Cohort Production Distribution (sum to 100 — UI enforces)
+  pct_orgs_high_volume: 15,
+  cohorts_per_high_volume: 5,
+  pct_orgs_steady: 50,
+  cohorts_per_steady: 1.5,
+  pct_orgs_occasional: 20,
+  cohorts_per_occasional: 0.7,
+  pct_orgs_dormant: 15,
+  // dormant tier always contributes 0 cohorts; no editable cohorts_per_dormant
+  avg_participants_per_cohort: 11,
+  cert_completion_rate: 95,
+
+  // [D] Retention — split by tenure + lapse-return + price-sensitive
+  year_1_renewal_rate: 70,               // first renewal decision (highest risk)
+  year_2plus_renewal_rate: 87,           // steady-state renewal once they've recommitted once
+  pct_lapsed_return_within_3yr: 25,      // gap-then-renewal fraction
+  months_until_gap_return: 24,
+  pct_orgs_price_sensitive: 40,          // soft signal — multiplier on year_1 churn risk
+
+  // What If mirror — same structure, model_ prefix
+  model_ipp_participants: 6,
+  model_pct_ipp_cwp_staff: 15,
+  model_pct_ipp_individual: 5,
+  model_orgs_per_ipp_participant: 0.75,
+  model_pct_convert_year_1: 25,
+  model_pct_convert_year_2: 40,
+  model_pct_convert_year_3plus: 10,
+  model_pct_convert_never: 25,
+  model_pct_activate_year_1: 80,
+  model_months_to_first_cohort: 4,
+  model_pct_orgs_high_volume: 15,
+  model_cohorts_per_high_volume: 5,
+  model_pct_orgs_steady: 50,
+  model_cohorts_per_steady: 1.5,
+  model_pct_orgs_occasional: 20,
+  model_cohorts_per_occasional: 0.7,
+  model_pct_orgs_dormant: 15,
+  model_avg_participants_per_cohort: 11,
+  model_cert_completion_rate: 95,
+  model_year_1_renewal_rate: 70,
+  model_year_2plus_renewal_rate: 87,
+  model_pct_lapsed_return_within_3yr: 25,
+  model_months_until_gap_return: 24,
+  model_pct_orgs_price_sensitive: 40,
+
+  // Regime presets (Pre-LMS = pre-2024 historical patterns; Post-LMS = post-2024 reality)
+  // Override layer: defaults load from selected regime; user edits stick; "Reset to regime" re-applies.
+  ippConversionRegime: 'post-LMS',
   // --- MODEL A: Per-Cohort Pricing ---
   modelA_annualFee: 1000,
   modelA_smallCohortFee: 800,
@@ -206,6 +298,21 @@ function migrateState(loaded) {
   delete out.costStaff; delete out.costLMS; delete out.costAccreditation; delete out.costSystems;
   delete out.costGovernance; delete out.costProgramAdmin; delete out.costInstructorSupport; delete out.costOutreach;
   delete out.additionalFixedCosts; delete out.costInflation; delete out.staffRaiseRate;
+
+  // ── One-shot migration: structured pipeline/retention from legacy flat vars ──
+  // For users who have customized the legacy flat values, preserve their intent in the
+  // single-value structured fields. Multi-value distributions stay at their defaults
+  // (no clean way to derive a 4-tier distribution from a single mean).
+  if (!out._migratedStructuredPipelineV1) {
+    const copy = (legacyKey, structuredKey) => {
+      if (out[legacyKey] != null && out[structuredKey] == null) out[structuredKey] = out[legacyKey];
+    };
+    copy('newIPPInstructors', 'ipp_participants');
+    copy('renewalRate', 'year_2plus_renewal_rate');
+    copy('model_newIPPInstructors', 'model_ipp_participants');
+    copy('model_renewalRate', 'model_year_2plus_renewal_rate');
+    out._migratedStructuredPipelineV1 = true;
+  }
   return out;
 }
 
@@ -280,35 +387,209 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
+// ─── STRUCTURED PIPELINE/RETENTION HELPERS ───
+// Sum-to-100 enforcement: warning + normalize button.
+// Used for IPP-conversion timing buckets and cohort-production distribution tiers.
+function SumTo100Group({ label, fields, state, set, prefix='', children }) {
+  const k = (name) => prefix + name;
+  const sum = fields.reduce((s, f) => s + (Number(state[k(f)]) || 0), 0);
+  const off = sum - 100;
+  const ok = Math.abs(off) < 0.5;
+  const normalize = () => {
+    if (sum === 0) return;
+    const factor = 100 / sum;
+    fields.forEach(f => set(k(f), Math.round((Number(state[k(f)]) || 0) * factor * 10) / 10));
+  };
+  return (
+    <div style={{ marginBottom:12, padding:'10px 12px', background:GRAY50, border:'1px solid '+GRAY200, borderRadius:8 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+        <span style={{ fontSize:12, fontWeight:700, color:GRAY700, textTransform:'uppercase', letterSpacing:'0.03em' }}>{label}</span>
+        <span style={{ fontSize:12, fontWeight:700, color: ok ? GREEN : (off > 0 ? AMBER : RED) }}>
+          Sum: {sum.toFixed(1)}% {ok ? '✓' : (off > 0 ? '(+'+off.toFixed(1)+')' : '('+off.toFixed(1)+')')}
+        </span>
+      </div>
+      {children}
+      {!ok && (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:6, padding:'6px 10px', background:'white', borderRadius:6, border:'1px solid '+(off>0?AMBER:RED) }}>
+          <span style={{ fontSize:11, color: off > 0 ? '#92400e' : '#991b1b' }}>
+            {off > 0 ? 'Over 100% — math will over-count.' : 'Under 100% — math will under-count.'}
+          </span>
+          <button onClick={normalize} style={{ padding:'4px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'none', background:BLUE, color:'white', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Normalize to 100%</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Regime override controls. Loads preset values for IPP conversion + renewal rates,
+// but lets user freely edit individual fields after applying. "Reset to regime" re-applies.
+function RegimeOverride({ state, set, prefix='' }) {
+  const k = (name) => prefix + name;
+  const apply = (regime) => {
+    set('ippConversionRegime', regime);
+    const preset = REGIME_PRESETS[regime];
+    Object.keys(preset).forEach(key => set(k(key), preset[key]));
+  };
+  const current = state.ippConversionRegime || 'post-LMS';
+  return (
+    <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, fontSize:12 }}>
+      <span style={{ color:GRAY500, fontWeight:600 }}>Regime:</span>
+      {Object.keys(REGIME_PRESETS).map(r => (
+        <button key={r} onClick={()=>apply(r)} style={{
+          padding:'4px 10px', fontSize:11, fontWeight:600, borderRadius:6,
+          border:'1px solid '+(current===r ? BLUE : GRAY200),
+          background: current===r ? BLUE : 'white',
+          color: current===r ? 'white' : GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif"
+        }}>{r}</button>
+      ))}
+      <span style={{ fontSize:11, color:GRAY500, fontStyle:'italic' }}>
+        Sets IPP conversion + renewal defaults. Edit individual fields to override.
+      </span>
+    </div>
+  );
+}
+
+// Compute structured-pipeline outputs: total cohorts, derived flat aggregates, etc.
+// Used by both the card display and the calc/forecast math.
+function computePipelineDerived(state, totalPartners, prefix='') {
+  const k = (name) => prefix + name;
+  const s = state;
+  const convertible = (s[k('ipp_participants')] || 0)
+    * (1 - (s[k('pct_ipp_cwp_staff')] || 0)/100 - (s[k('pct_ipp_individual')] || 0)/100);
+  const newOrgsInPipeline = convertible * (s[k('orgs_per_ipp_participant')] || 0);
+
+  // Cohort distribution — orgs in each tier and their cohort output
+  const orgsHigh = totalPartners * (s[k('pct_orgs_high_volume')] || 0)/100;
+  const orgsSteady = totalPartners * (s[k('pct_orgs_steady')] || 0)/100;
+  const orgsOcc = totalPartners * (s[k('pct_orgs_occasional')] || 0)/100;
+  const orgsDormant = totalPartners * (s[k('pct_orgs_dormant')] || 0)/100;
+  const totalCohorts = orgsHigh * (s[k('cohorts_per_high_volume')] || 0)
+    + orgsSteady * (s[k('cohorts_per_steady')] || 0)
+    + orgsOcc * (s[k('cohorts_per_occasional')] || 0);
+    // dormant tier always 0
+  const activeOrgs = orgsHigh + orgsSteady + orgsOcc;
+  const totalParticipants = totalCohorts * (s[k('avg_participants_per_cohort')] || 0);
+  const totalCerts = totalParticipants * (s[k('cert_completion_rate')] || 0)/100;
+
+  // Derived flat aggregates (option C — for back-compat displays + summary readouts)
+  const cohortsPerOrgDerived = totalPartners > 0 ? totalCohorts / totalPartners : 0;
+  const pctRunningCohortsDerived = 100 - (s[k('pct_orgs_dormant')] || 0);
+
+  return {
+    convertible, newOrgsInPipeline,
+    orgsHigh, orgsSteady, orgsOcc, orgsDormant, activeOrgs,
+    totalCohorts, totalParticipants, totalCerts,
+    cohortsPerOrgDerived, pctRunningCohortsDerived,
+  };
+}
+
 function PipelineRetentionCard({ state, calc, set, prefix='' }) {
   const k = (name) => prefix + name;
   const totalPartners = calc.totalPartners;
-  const effP = totalPartners * (state[k('renewalRate')]/100);
-  const actOrgs = effP * (state[k('pctLicenseToActive')]/100);
-  const cohorts = actOrgs * state[k('cohortsPerOrg')];
-  const ippRev = state[k('newIPPInstructors')] * state[k('feeIPP')];
+  const d = computePipelineDerived(state, totalPartners, prefix);
+  const ippRev = (state[k('ipp_participants')] || 0) * state[k('feeIPP')];
+
   return (
     <Card>
-      <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:12 }}>Pipeline & Retention</div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-        <InputField label="New IPP instructors/yr" value={state[k('newIPPInstructors')]} min={0} max={50} onChange={v=>set(k('newIPPInstructors'),v)} />
-        <InputField label="IPP fee" value={state[k('feeIPP')]} min={0} max={10000} step={100} onChange={v=>set(k('feeIPP'),v)} prefix="$" />
-        <InputField label="% IPP to licensed" value={state[k('pctIPPtoLicense')]} min={0} max={100} onChange={v=>set(k('pctIPPtoLicense'),v)} unit="%" />
-        <InputField label="% running cohorts" value={state[k('pctLicenseToActive')]} min={0} max={100} onChange={v=>set(k('pctLicenseToActive'),v)} unit="%" />
-        <InputField label="Cohorts per org/yr" value={state[k('cohortsPerOrg')]} min={1} max={10} onChange={v=>set(k('cohortsPerOrg'),v)} note="Directly-tunable average across the book. Instructor count doesn't scale this cleanly — some orgs have 6 instructors and 1 active cohort; others have 1 instructor and 3 cohorts. Use the historical average." />
-        <InputField label="Avg participants" value={state[k('avgParticipants')]} min={1} max={15} onChange={v=>set(k('avgParticipants'),v)} />
-        <InputField label="Renewal rate" value={state[k('renewalRate')]} min={0} max={100} onChange={v=>set(k('renewalRate'),v)} unit="%" note="% of existing partners who renew their license each year. Drives retention across all models." />
+      <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:8 }}>Pipeline & Retention</div>
+      <RegimeOverride state={state} set={set} prefix={prefix} />
+
+      {/* [A] IPP Pipeline */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>A · IPP Pipeline</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+          <InputField label="IPP participants/yr" value={state[k('ipp_participants')]} min={0} max={50} onChange={v=>set(k('ipp_participants'),v)} note="Total seats filled per year." />
+          <InputField label="IPP fee" value={state[k('feeIPP')]} min={0} max={10000} step={100} onChange={v=>set(k('feeIPP'),v)} prefix="$" />
+          <InputField label="% CWP staff" value={state[k('pct_ipp_cwp_staff')]} min={0} max={50} step={0.5} onChange={v=>set(k('pct_ipp_cwp_staff'),v)} unit="%" note="Excluded from license conversion math." />
+          <InputField label="% individual practitioners" value={state[k('pct_ipp_individual')]} min={0} max={50} step={0.5} onChange={v=>set(k('pct_ipp_individual'),v)} unit="%" note="Can't license an org. Excluded too." />
+          <InputField label="Orgs per IPP participant" value={state[k('orgs_per_ipp_participant')]} min={0} max={1.5} step={0.05} onChange={v=>set(k('orgs_per_ipp_participant'),v)} note="Some orgs send 2-3 people; <1 collapses them." />
+        </div>
+        <div style={{ fontSize:11, color:GRAY500, marginTop:4 }}>
+          → <strong>{d.newOrgsInPipeline.toFixed(1)} new orgs</strong> entering the conversion pipeline this year ({d.convertible.toFixed(1)} convertible participants × {state[k('orgs_per_ipp_participant')]})
+        </div>
       </div>
+
+      {/* IPP→License conversion timing */}
+      <SumTo100Group
+        label="IPP → License conversion timing"
+        fields={['pct_convert_year_1','pct_convert_year_2','pct_convert_year_3plus','pct_convert_never']}
+        state={state} set={set} prefix={prefix}
+      >
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+          <InputField label="% convert in year 1" value={state[k('pct_convert_year_1')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_convert_year_1'),v)} unit="%" note="Within 12 months of IPP." />
+          <InputField label="% convert in year 2" value={state[k('pct_convert_year_2')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_convert_year_2'),v)} unit="%" note="12-24 months after IPP." />
+          <InputField label="% convert in year 3+" value={state[k('pct_convert_year_3plus')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_convert_year_3plus'),v)} unit="%" note="After 24 months." />
+          <InputField label="% never convert" value={state[k('pct_convert_never')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_convert_never'),v)} unit="%" note="Permanent walk-away." />
+        </div>
+      </SumTo100Group>
+
+      {/* [B] License Activation */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>B · License Activation</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+          <InputField label="% activate in year 1" value={state[k('pct_activate_year_1')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_activate_year_1'),v)} unit="%" note="Newly licensed orgs that run ≥1 cohort in year 1. Buffalo Sewer / NRG didn't." />
+          <InputField label="Months to first cohort" value={state[k('months_to_first_cohort')]} min={1} max={18} onChange={v=>set(k('months_to_first_cohort'),v)} note="Display only — affects planning notes." />
+        </div>
+      </div>
+
+      {/* [C] Cohort Production Distribution */}
+      <SumTo100Group
+        label="C · Cohort Production Distribution"
+        fields={['pct_orgs_high_volume','pct_orgs_steady','pct_orgs_occasional','pct_orgs_dormant']}
+        state={state} set={set} prefix={prefix}
+      >
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px', alignItems:'end' }}>
+          <InputField label="% high-volume" value={state[k('pct_orgs_high_volume')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_orgs_high_volume'),v)} unit="%" />
+          <InputField label="cohorts/org" value={state[k('cohorts_per_high_volume')]} min={0} max={10} step={0.1} onChange={v=>set(k('cohorts_per_high_volume'),v)} note="e.g. Thrive ~5" />
+          <div style={{ fontSize:11, color:GRAY500, paddingBottom:14 }}>{d.orgsHigh.toFixed(1)} orgs × {state[k('cohorts_per_high_volume')]}</div>
+          <InputField label="% steady" value={state[k('pct_orgs_steady')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_orgs_steady'),v)} unit="%" />
+          <InputField label="cohorts/org" value={state[k('cohorts_per_steady')]} min={0} max={10} step={0.1} onChange={v=>set(k('cohorts_per_steady'),v)} note="1-2 cohorts/yr" />
+          <div style={{ fontSize:11, color:GRAY500, paddingBottom:14 }}>{d.orgsSteady.toFixed(1)} orgs × {state[k('cohorts_per_steady')]}</div>
+          <InputField label="% occasional" value={state[k('pct_orgs_occasional')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_orgs_occasional'),v)} unit="%" />
+          <InputField label="cohorts/org" value={state[k('cohorts_per_occasional')]} min={0} max={10} step={0.1} onChange={v=>set(k('cohorts_per_occasional'),v)} note="≤1/yr or skips years" />
+          <div style={{ fontSize:11, color:GRAY500, paddingBottom:14 }}>{d.orgsOcc.toFixed(1)} orgs × {state[k('cohorts_per_occasional')]}</div>
+          <InputField label="% dormant" value={state[k('pct_orgs_dormant')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_orgs_dormant'),v)} unit="%" note="Paid, didn't deliver" />
+          <div style={{ fontSize:11, color:GRAY500, paddingBottom:14, gridColumn:'span 2' }}>{d.orgsDormant.toFixed(1)} orgs × 0 cohorts</div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px', marginTop:6 }}>
+          <InputField label="Avg participants per cohort" value={state[k('avg_participants_per_cohort')]} min={1} max={15} onChange={v=>set(k('avg_participants_per_cohort'),v)} note="2025 median = 11" />
+          <InputField label="Cert completion rate" value={state[k('cert_completion_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('cert_completion_rate'),v)} unit="%" note="Stable ~95%." />
+        </div>
+      </SumTo100Group>
+
+      {/* [D] Retention */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>D · Retention</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+          <InputField label="Year-1 renewal rate" value={state[k('year_1_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('year_1_renewal_rate'),v)} unit="%" note="First renewal decision — highest risk. Includes price-point dropouts." />
+          <InputField label="Year-2+ renewal rate" value={state[k('year_2plus_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('year_2plus_renewal_rate'),v)} unit="%" note="Steady-state once they've recommitted once." />
+          <InputField label="% lapsed orgs return within 3yr" value={state[k('pct_lapsed_return_within_3yr')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_lapsed_return_within_3yr'),v)} unit="%" note="LAGC, Delgado, GWRVA pattern." />
+          <InputField label="Months until gap-return" value={state[k('months_until_gap_return')]} min={6} max={48} onChange={v=>set(k('months_until_gap_return'),v)} note="Average 18-30 months." />
+          <InputField label="% orgs price-sensitive" value={state[k('pct_orgs_price_sensitive')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_orgs_price_sensitive'),v)} unit="%" note="Among recent licensees and pending orgs. Elevated risk for both non-conversion AND non-renewal." />
+        </div>
+      </div>
+
+      {/* Outputs */}
       <div style={{ display:'flex', gap:16, marginTop:12, paddingTop:10, borderTop:'1px solid '+GRAY200, flexWrap:'wrap' }}>
         <div>
           <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>IPP Revenue</div>
           <div style={{ fontSize:18, fontWeight:700, color:GREEN }}>{fmt(ippRev)}</div>
-          <div style={{ fontSize:10, color:GRAY500 }}>{state[k('newIPPInstructors')]} instructors × {fmt(state[k('feeIPP')])}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{state[k('ipp_participants')]} participants × {fmt(state[k('feeIPP')])}</div>
         </div>
         <div>
-          <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Cohorts/yr</div>
-          <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{cohorts.toFixed(1)}</div>
-          <div style={{ fontSize:10, color:GRAY500 }}>{actOrgs.toFixed(1)} active orgs × {state[k('cohortsPerOrg')]}</div>
+          <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Total Cohorts/yr</div>
+          <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>{d.totalCohorts.toFixed(1)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{d.activeOrgs.toFixed(1)} active orgs (high+steady+occ)</div>
+        </div>
+        <div>
+          <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Derived avg cohorts/org</div>
+          <div style={{ fontSize:18, fontWeight:700, color:PURPLE }}>{d.cohortsPerOrgDerived.toFixed(2)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>across all {totalPartners} partners</div>
+        </div>
+        <div>
+          <div style={{ fontSize:10, textTransform:'uppercase', color:GRAY500 }}>Certs/yr</div>
+          <div style={{ fontSize:18, fontWeight:700, color:TEAL }}>{Math.round(d.totalCerts)}</div>
+          <div style={{ fontSize:10, color:GRAY500 }}>{d.totalParticipants.toFixed(0)} participants × {state[k('cert_completion_rate')]}%</div>
         </div>
       </div>
     </Card>
@@ -434,14 +715,19 @@ function App() {
     const totalPartners = s.partnerCounts.reduce((a,b)=>a+b,0) + ct.reduce((a,t)=>a+(t.count||0),0);
     const totalInstructors = s.partnerCounts.reduce((sum,c,i)=>sum+c*TIERS[i].instructors,0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.instructors||0),0);
     const licenseRevenue = s.partnerCounts.reduce((sum,c,i)=>sum+c*s.tierFees[i],0) + ct.reduce((sum,t)=>sum+(t.count||0)*(t.fee||0),0);
-    const effectivePartners = totalPartners * (s.renewalRate/100);
-    const activeCohortOrgs = effectivePartners * (s.pctLicenseToActive/100);
-    const totalCohorts = activeCohortOrgs * s.cohortsPerOrg;
-    const totalParticipants = totalCohorts * s.avgParticipants;
+
+    // ── Pipeline derived from new structured inputs (Current State scope) ──
+    // Replaces flat renewalRate × pctLicenseToActive × cohortsPerOrg chain.
+    // Cohort volume comes from the tiered distribution (high/steady/occasional/dormant).
+    const psd = computePipelineDerived(s, totalPartners, '');
+    const effectivePartners = totalPartners * (s.year_2plus_renewal_rate/100); // steady-state retention proxy
+    const activeCohortOrgs = psd.activeOrgs;
+    const totalCohorts = psd.totalCohorts;
+    const totalParticipants = psd.totalParticipants;
     const certsIncluded = totalPartners * 15;
-    const certsIssued = totalParticipants;
+    const certsIssued = psd.totalCerts; // applies cert_completion_rate
     const certOverages = Math.max(0, certsIssued - certsIncluded);
-    const ippRevenue = s.newIPPInstructors * s.feeIPP;
+    const ippRevenue = (s.ipp_participants || 0) * s.feeIPP;
     const cohortRevenue = totalCohorts * s.feeCohort;
     const certOverageRev = (s.anticipatedCertFee||0) * (s.anticipatedCertCount||0);
     const grantRevenue = (s.funders||[]).reduce((sum,f)=>sum+(f.amount||0),0);
@@ -450,7 +736,7 @@ function App() {
     // and 5-Year Outlook only. Current State totals (Total Costs, Current/Model A/B
     // Profit in the header, and the Margin rollup) use ONLY the line-item budget,
     // because the user's staff time for current volumes is already captured there.
-    const ippCostTotal = s.newIPPInstructors * s.costPerIPP;
+    const ippCostTotal = (s.ipp_participants || 0) * s.costPerIPP;
     const cohortCostTotal = totalCohorts * s.costPerCohort;
     const partnerCostTotal = totalPartners * (s.costPerPartner || 0);
     const certCostTotal = certsIssued * (s.costPerCert || 0);
@@ -463,15 +749,15 @@ function App() {
     const currentNetAfterFunders = currentContribution - fixedGap;
 
     // ── Model-specific pipeline/retention (What If tab) ──
-    // Model A/B use a separate set of pipeline/retention assumptions so the user can
-    // explore "what if the funnel/retention were different" without disturbing Current State.
-    const modelEffP = totalPartners * (s.model_renewalRate/100);
-    const modelActOrgs = modelEffP * (s.model_pctLicenseToActive/100);
-    const modelTotalCohorts = modelActOrgs * s.model_cohortsPerOrg;
-    const modelTotalParticipants = modelTotalCohorts * s.model_avgParticipants;
-    const modelCertsIssued = modelTotalParticipants;
-    const modelIppRevenue = s.model_newIPPInstructors * s.model_feeIPP;
-    const modelIppCost = s.model_newIPPInstructors * s.costPerIPP;
+    // Now derived from structured inputs in the model_ scope.
+    const mpsd = computePipelineDerived(s, totalPartners, 'model_');
+    const modelEffP = totalPartners * (s.model_year_2plus_renewal_rate/100);
+    const modelActOrgs = mpsd.activeOrgs;
+    const modelTotalCohorts = mpsd.totalCohorts;
+    const modelTotalParticipants = mpsd.totalParticipants;
+    const modelCertsIssued = mpsd.totalCerts;
+    const modelIppRevenue = (s.model_ipp_participants || 0) * s.model_feeIPP;
+    const modelIppCost = (s.model_ipp_participants || 0) * s.costPerIPP;
     const modelCohortCost = modelTotalCohorts * s.costPerCohort;
     const modelCertCost = modelCertsIssued * (s.costPerCert || 0);
     const modelVariableCostTotal = modelIppCost + modelCohortCost + partnerCostTotal + modelCertCost;
@@ -485,7 +771,7 @@ function App() {
     let maPilotDrag = 0;
     if (s.modelA_pilotEnabled) {
       const pp = Math.min(s.modelA_pilotPartners, totalPartners);
-      maPilotDrag = pp * (s.modelA_annualFee - s.modelA_pilotFee) + pp * s.model_cohortsPerOrg * (s.modelA_largeCohortFee - s.modelA_pilotCohortFee);
+      maPilotDrag = pp * (s.modelA_annualFee - s.modelA_pilotFee) + pp * mpsd.cohortsPerOrgDerived * (s.modelA_largeCohortFee - s.modelA_pilotCohortFee);
       maTotalRev -= maPilotDrag;
     }
     const maNetMargin = maTotalRev - totalCost;
@@ -528,6 +814,9 @@ function App() {
   }, [state]);
 
   // ═══ 5-YEAR FORECAST ═══
+  // Structured rollup: tracks IPP pipeline by cohort year (3-year conversion window),
+  // partner book by tenure (year_1 vs tenured), and a lapsed-return pool that adds
+  // gap-then-renewal orgs back into the tenured book after months_until_gap_return.
   const forecast = useMemo(() => {
     const s = state;
     const startPartners = calc.totalPartners;
@@ -535,6 +824,19 @@ function App() {
     let cumRevenue=0, cumCost=0, cumMargin=0;
     let breakEvenYear=null;
     const years=[];
+
+    // ── State carried across years ──
+    // Pipeline: orgs that completed IPP in prior years and still might convert.
+    // Index = years since IPP completion (1 = last year, 2 = 2 years ago).
+    // Each year, ipp completions enter at index 0, age up, and exit after year 3.
+    let pipelineByAge = [0, 0, 0]; // [age 1, age 2, age 3] from last 3 years
+    // Partner book split by tenure: year_1_book = partners in their first year on the book.
+    let year1Book = 0;
+    let tenuredBook = startPartners; // start: assume entire opening book is tenured
+    // Lapsed pool: orgs that didn't renew, indexed by years-since-lapse, may return.
+    let lapsedPool = [0, 0, 0]; // [age 1, age 2, age 3]
+
+    const monthsToReturnYears = Math.max(1, Math.round((s.months_until_gap_return || 24) / 12));
 
     for (let yr=0; yr<5; yr++) {
       const feeEsc = Math.pow(1+s.feeEscalation/100, yr);
@@ -549,34 +851,75 @@ function App() {
         return sum + (Number(l.amount)||0) * Math.pow(1 + rate/100, yr);
       }, 0);
 
-      let partners;
-      if (yr===0) partners=startPartners;
-      else { const prev=years[yr-1]; partners=Math.round(prev.partners*(s.renewalRate/100))+Math.round(prev.newIPP*(s.pctIPPtoLicense/100)); }
-      const newIPP = Math.round(s.newIPPInstructors * pipeGrow);
-      const effP = partners*(s.renewalRate/100);
-      const actOrgs = effP*(s.pctLicenseToActive/100);
-      const cohorts = actOrgs*s.cohortsPerOrg;
-      const participants = cohorts*s.avgParticipants;
-      const grantRev = grantBase*grantGrow;
-      const ippRev = newIPP*s.feeIPP;
+      // ── 1. New IPP enrollments this year, derive convertible orgs entering pipeline ──
+      const ippThisYear = (s.ipp_participants || 0) * pipeGrow;
+      const convertible = ippThisYear * (1 - (s.pct_ipp_cwp_staff||0)/100 - (s.pct_ipp_individual||0)/100);
+      const newOrgsToPipeline = convertible * (s.orgs_per_ipp_participant || 0);
 
-      // Current model revenue
+      // ── 2. New license conversions this year from pipeline cohorts ──
+      // Convention: when pipelineByAge[0..2] enters this year's calculation, each entry
+      // converts at its corresponding rate. New IPP entrants this year (newOrgsToPipeline)
+      // convert at year-1 rate immediately.
+      const conv1 = newOrgsToPipeline * (s.pct_convert_year_1 || 0)/100;
+      const conv2 = pipelineByAge[0] * (s.pct_convert_year_2 || 0)/100;
+      const conv3 = pipelineByAge[1] * (s.pct_convert_year_3plus || 0)/100;
+      const newLicenses = conv1 + conv2 + conv3;
+
+      // ── 3. Lapsed-return: orgs that lapsed N years ago return at gap-return rate ──
+      // The full lapsed pool that's eligible has aged enough to return.
+      const eligibleLapsed = lapsedPool[monthsToReturnYears - 1] || 0;
+      const returningOrgs = eligibleLapsed * (s.pct_lapsed_return_within_3yr || 0)/100;
+
+      // ── 4. Apply renewal to last year's book to compute carryover ──
+      // year1Book → graduates to tenured at year_1_renewal_rate; rest go to lapsed pool
+      // tenuredBook → retains at year_2plus_renewal_rate; rest go to lapsed pool
+      const y1Retained = year1Book * (s.year_1_renewal_rate || 0)/100;
+      const y1Lapsed = year1Book - y1Retained;
+      const tenRetained = tenuredBook * (s.year_2plus_renewal_rate || 0)/100;
+      const tenLapsed = tenuredBook - tenRetained;
+
+      // ── 5. New tenure book composition for THIS year ──
+      year1Book = newLicenses;
+      tenuredBook = y1Retained + tenRetained + returningOrgs;
+      const partners = year1Book + tenuredBook;
+
+      // ── 6. Cohort production via tiered distribution (applied to total partners) ──
+      // Year-1 partners get their first-year activation discount; tenured run at full distribution.
+      const dist = (which) => (s[which] || 0)/100;
+      const tenuredCohorts = tenuredBook * (
+        dist('pct_orgs_high_volume') * (s.cohorts_per_high_volume || 0)
+        + dist('pct_orgs_steady') * (s.cohorts_per_steady || 0)
+        + dist('pct_orgs_occasional') * (s.cohorts_per_occasional || 0)
+        // dormant tier always 0
+      );
+      // year-1 cohort: assume new partners run at "steady" tier output, discounted by activation%
+      const year1Cohorts = year1Book * (s.pct_activate_year_1 || 0)/100 * (s.cohorts_per_steady || 0);
+      const cohorts = tenuredCohorts + year1Cohorts;
+      const participants = cohorts * (s.avg_participants_per_cohort || 0);
+      const certs = participants * (s.cert_completion_rate || 0)/100;
+
+      const grantRev = grantBase * grantGrow;
+      const ippRev = ippThisYear * s.feeIPP;
+      const newIPP = Math.round(ippThisYear); // for display continuity
+
+      // Current model revenue (proportional tier allocation by opening-book share)
       const licRev = s.partnerCounts.reduce((sum,c,i)=>{
         const share=startPartners>0?c/startPartners:(i===0?1:0);
-        return sum+Math.round(partners*share)*s.tierFees[i]*feeEsc;
+        return sum + partners * share * s.tierFees[i] * feeEsc;
       },0);
       const cohRev = cohorts*s.feeCohort*feeEsc;
-      const overages = Math.max(0, participants - partners*15);
+      const overages = Math.max(0, certs - partners*15);
       const certRev = overages*s.feeCertOverage;
       const currentRev = licRev+ippRev+cohRev+certRev+grantRev;
 
       // Model A revenue
-      const maSmall=Math.round(cohorts*(s.modelA_pctSmall/100));
-      const maLarge=Math.round(cohorts*(1-s.modelA_pctSmall/100));
+      const maSmall=cohorts*(s.modelA_pctSmall/100);
+      const maLarge=cohorts*(1-s.modelA_pctSmall/100);
       let maRev = partners*s.modelA_annualFee*feeEsc + maSmall*s.modelA_smallCohortFee*feeEsc + maLarge*s.modelA_largeCohortFee*feeEsc + ippRev + grantRev;
       if (s.modelA_pilotEnabled && yr < s.modelA_pilotDuration) {
         const pp=Math.min(s.modelA_pilotPartners,partners);
-        maRev -= pp*(s.modelA_annualFee*feeEsc-s.modelA_pilotFee) + pp*s.cohortsPerOrg*(s.modelA_largeCohortFee*feeEsc-s.modelA_pilotCohortFee);
+        const avgCohortsPerPartner = partners > 0 ? cohorts / partners : 0;
+        maRev -= pp*(s.modelA_annualFee*feeEsc-s.modelA_pilotFee) + pp*avgCohortsPerPartner*(s.modelA_largeCohortFee*feeEsc-s.modelA_pilotCohortFee);
       }
 
       // Model B revenue: base license + packages + add-on cohorts
@@ -598,10 +941,10 @@ function App() {
 
       // Costs (same for all models)
       const fixedTotal = budgetLinesEsc + (isReaccred ? s.reaccredCost : 0);
-      const ippCost = newIPP*s.costPerIPP*varCostInf;
+      const ippCost = ippThisYear*s.costPerIPP*varCostInf;
       const cohortCost = cohorts*s.costPerCohort*varCostInf;
       const partnerCost = partners*(s.costPerPartner||0)*varCostInf;
-      const certCost = participants*(s.costPerCert||0)*varCostInf;
+      const certCost = certs*(s.costPerCert||0)*varCostInf;
       const totalCost = fixedTotal+ippCost+cohortCost+partnerCost+certCost;
 
       const chosenRev = s.forecastModel==='a'?maRev : s.forecastModel==='b'?mbRev : currentRev;
@@ -609,10 +952,21 @@ function App() {
       cumRevenue+=chosenRev; cumCost+=totalCost; cumMargin+=netMargin;
       if (breakEvenYear===null && cumMargin>0) breakEvenYear=yr+1;
 
-      years.push({ year:yr+1, calendarYear, label:calendarYear.toString(), partners, newIPP,
+      years.push({ year:yr+1, calendarYear, label:calendarYear.toString(),
+        partners, year1Book, tenuredBook, newIPP, newLicenses,
+        cohorts, participants, certs,
         currentRev, maRev, mbRev, totalCost, fixedCost:fixedTotal, variableCost:ippCost+cohortCost+certCost,
         reaccredSpike:isReaccred?s.reaccredCost:0,
         chosenRev, netMargin, marginPct:chosenRev>0?netMargin/chosenRev:0, cumRevenue, cumCost, cumMargin });
+
+      // ── 7. Roll pipeline / lapsed pool forward to next year ──
+      // Pipeline aging: this year's new IPP entrants become age 1 next year; age 1 → age 2; age 2 → age 3 (then drop).
+      pipelineByAge = [newOrgsToPipeline, pipelineByAge[0], pipelineByAge[1]];
+      // Lapsed pool: this year's lapses enter at age 1, others age up; pool empties after 3 years.
+      // Returning orgs are removed from the eligible-age slot.
+      const remainingEligible = (lapsedPool[monthsToReturnYears - 1] || 0) - returningOrgs;
+      lapsedPool = lapsedPool.map((v, i) => i === monthsToReturnYears - 1 ? Math.max(0, remainingEligible) : v);
+      lapsedPool = [y1Lapsed + tenLapsed, lapsedPool[0], lapsedPool[1]];
     }
     return { years, breakEvenYear };
   }, [state, calc]);
@@ -864,20 +1218,21 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
   const s = state;
   const c = calc;
 
-  // Comparison chart data. Current line uses Current State P&R; Model A/B use What If (model_*) P&R.
+  // Comparison chart data. Current line uses Current State structured P&R; Models use What If (model_) structured P&R.
+  // Cohort volume per-partner is the structured derived avg cohorts/org, which captures the tiered distribution.
   const compData = useMemo(() => {
     const arr = [];
+    const cAvgCohorts = computePipelineDerived(s, 1, '').cohortsPerOrgDerived;
+    const mAvgCohorts = computePipelineDerived(s, 1, 'model_').cohortsPerOrgDerived;
     for (let p=1; p<=25; p++) {
       // Current line: Current State pipeline/retention
-      const cEffP = p*(s.renewalRate/100);
-      const cCoh = cEffP*(s.pctLicenseToActive/100)*s.cohortsPerOrg;
-      const cParts = cCoh*s.avgParticipants;
+      const cCoh = p * cAvgCohorts;
+      const cParts = cCoh * (s.avg_participants_per_cohort || 0);
       const currRev = p*s.tierFees[0] + cCoh*s.feeCohort + Math.max(0,cParts-p*15)*s.feeCertOverage;
       // Models: What If pipeline/retention
-      const mEffP = p*(s.model_renewalRate/100);
-      const coh = mEffP*(s.model_pctLicenseToActive/100)*s.model_cohortsPerOrg;
+      const coh = p * mAvgCohorts;
       // Model A
-      const maSmall=Math.round(coh*(s.modelA_pctSmall/100)), maLarge=Math.round(coh*(1-s.modelA_pctSmall/100));
+      const maSmall=coh*(s.modelA_pctSmall/100), maLarge=coh*(1-s.modelA_pctSmall/100);
       const maRev = p*s.modelA_annualFee + maSmall*s.modelA_smallCohortFee + maLarge*s.modelA_largeCohortFee;
       // Model B: base + packages + add-on
       const mbSt=Math.round(p*(s.modelB_pctStarter/100)), mbSd=Math.round(p*(s.modelB_pctStandard/100)), mbGr=p-mbSt-mbSd;
@@ -1312,13 +1667,21 @@ function BreakEvenTab({ state, calc }) {
             return sum + (Number(l.amount)||0) * Math.pow(1 + rate/100, yr);
           }, 0);
 
-          if (yr > 0) { p = Math.round(p*(s.renewalRate/100)) + Math.round(s.newIPPInstructors*pipeGrow*(s.pctIPPtoLicense/100)); }
-          const newIPP = Math.round(s.newIPPInstructors*pipeGrow);
-          const effP = p*(s.renewalRate/100);
-          const actOrgs = effP*(s.pctLicenseToActive/100);
-          const cohorts = actOrgs*cohPerOrg;
-          const participants = cohorts*s.avgParticipants;
-          const ippRev = newIPP*s.feeIPP;
+          // Year-over-year carry: tenured (year_2plus rate) + new licenses entering this year.
+          // Year-1 cohort is approximated as the new licenses; in subsequent years, year-1 graduates
+          // to tenured at year_1_renewal_rate. (Phase 1 simplification: use year_2plus blended rate
+          // for the BreakEven sweep rollup; the per-tenure split lives in the main forecast.)
+          const ippThis = (s.ipp_participants || 0) * pipeGrow;
+          const convertible = ippThis * (1 - (s.pct_ipp_cwp_staff||0)/100 - (s.pct_ipp_individual||0)/100);
+          const newOrgs = convertible * (s.orgs_per_ipp_participant || 0);
+          // Combined conversion rate across timing buckets (cumulative within the 3-year window).
+          // Approximation for Monte Carlo speed: use within-12mo rate for new entrants this year.
+          const newLicenses = newOrgs * (s.pct_convert_year_1 || 0)/100;
+          if (yr > 0) { p = Math.round(p*(s.year_2plus_renewal_rate/100)) + Math.round(newLicenses); }
+          const newIPP = Math.round(ippThis);
+          const cohorts = p * cohPerOrg; // axis variable — held constant for the sweep
+          const participants = cohorts*(s.avg_participants_per_cohort || 0);
+          const ippRev = ippThis*s.feeIPP;
           const grantRev = grantBase*grantGrow;
 
           // Current
@@ -1345,7 +1708,7 @@ function BreakEvenTab({ state, calc }) {
 
           // Cost
           const fixed = beBudgetEsc + (isReaccred ? s.reaccredCost : 0);
-          cumCost += fixed + newIPP*s.costPerIPP*varCostInf + cohorts*s.costPerCohort*varCostInf + p*(s.costPerPartner||0)*varCostInf + participants*(s.costPerCert||0)*varCostInf;
+          cumCost += fixed + ippThis*s.costPerIPP*varCostInf + cohorts*s.costPerCohort*varCostInf + p*(s.costPerPartner||0)*varCostInf + participants*(s.costPerCert||0)*varCostInf;
         }
 
         const entry = { partners, cohPerOrg, cumCost };
@@ -1378,13 +1741,18 @@ function BreakEvenTab({ state, calc }) {
   const modelABE = useMemo(() => findBreakEven(analysis.modelA), [analysis]);
   const modelBBE = useMemo(() => findBreakEven(analysis.modelB), [analysis]);
 
-  // Chart: 5-year margin by partner count (at current cohorts/org setting)
+  // Chart: 5-year margin by partner count (at the derived avg cohorts/org)
+  // Use the rounded (1-6) integer slot for matching against the Monte Carlo grid.
+  const derivedCohortsPerOrg = useMemo(() => {
+    const d = computePipelineDerived(s, 1, '');
+    return Math.max(1, Math.min(6, Math.round(d.cohortsPerOrgDerived)));
+  }, [s]);
   const marginByPartners = useMemo(() => {
     const arr = [];
     for (let p = 1; p <= 30; p++) {
-      const currEntry = analysis.current.find(d => d.partners===p && d.cohPerOrg===s.cohortsPerOrg);
-      const maEntry = analysis.modelA.find(d => d.partners===p && d.cohPerOrg===s.cohortsPerOrg);
-      const mbEntry = analysis.modelB.find(d => d.partners===p && d.cohPerOrg===s.cohortsPerOrg);
+      const currEntry = analysis.current.find(d => d.partners===p && d.cohPerOrg===derivedCohortsPerOrg);
+      const maEntry = analysis.modelA.find(d => d.partners===p && d.cohPerOrg===derivedCohortsPerOrg);
+      const mbEntry = analysis.modelB.find(d => d.partners===p && d.cohPerOrg===derivedCohortsPerOrg);
       arr.push({
         partners: p,
         Current: currEntry ? Math.round(currEntry.margin) : 0,
@@ -1393,7 +1761,7 @@ function BreakEvenTab({ state, calc }) {
       });
     }
     return arr;
-  }, [analysis, s.cohortsPerOrg]);
+  }, [analysis, derivedCohortsPerOrg]);
 
   // Heatmap data: for selected model, margin by partners x cohorts/org
   const [heatModel, setHeatModel] = useState('current');
@@ -1463,7 +1831,7 @@ function BreakEvenTab({ state, calc }) {
       {/* 5-year margin by partner count */}
       <Card style={{ marginBottom:16 }}>
         <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>5-Year Cumulative Margin by Partner Count</div>
-        <div style={{ fontSize:12, color:GRAY500, marginBottom:8 }}>At {s.cohortsPerOrg} cohort{s.cohortsPerOrg>1?'s':''} per org/yr (change in Current State tab)</div>
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:8 }}>At {derivedCohortsPerOrg} cohort{derivedCohortsPerOrg>1?'s':''}/org/yr (derived from your Cohort Production Distribution on the Current State tab)</div>
         <div style={{ width:'100%', height:320 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={marginByPartners} margin={{ top:5,right:20,bottom:5,left:20 }}>
