@@ -183,6 +183,7 @@ const defaults = {
   // [D] Retention — split by tenure + lapse-return + price-sensitive
   year_1_renewal_rate: 70,               // first renewal decision (highest risk)
   year_2plus_renewal_rate: 87,           // steady-state renewal once they've recommitted once
+  dormant_year_1_renewal_rate: 40,       // year-1 partners who paid but never activated — much lower renewal
   pct_lapsed_return_within_3yr: 25,      // gap-then-renewal fraction
   months_until_gap_return: 24,
   pct_orgs_price_sensitive: 40,          // soft signal — multiplier on year_1 churn risk
@@ -209,6 +210,7 @@ const defaults = {
   model_cert_completion_rate: 95,
   model_year_1_renewal_rate: 70,
   model_year_2plus_renewal_rate: 87,
+  model_dormant_year_1_renewal_rate: 40,
   model_pct_lapsed_return_within_3yr: 25,
   model_months_until_gap_return: 24,
   model_pct_orgs_price_sensitive: 40,
@@ -561,7 +563,8 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
       <div style={{ marginBottom:12 }}>
         <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>D · Retention</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-          <InputField label="Year-1 renewal rate" value={state[k('year_1_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('year_1_renewal_rate'),v)} unit="%" note="First renewal decision — highest risk. Includes price-point dropouts." />
+          <InputField label="Year-1 renewal rate (active)" value={state[k('year_1_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('year_1_renewal_rate'),v)} unit="%" note="First renewal decision for orgs who DID activate. Still highest-risk bucket." />
+          <InputField label="Year-1 renewal rate (dormant)" value={state[k('dormant_year_1_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('dormant_year_1_renewal_rate'),v)} unit="%" note="Paid but never activated — renew much less. Buffalo Sewer / NRG signal." />
           <InputField label="Year-2+ renewal rate" value={state[k('year_2plus_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('year_2plus_renewal_rate'),v)} unit="%" note="Steady-state once they've recommitted once." />
           <InputField label="% lapsed orgs return within 3yr" value={state[k('pct_lapsed_return_within_3yr')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_lapsed_return_within_3yr'),v)} unit="%" note="LAGC, Delgado, GWRVA pattern." />
           <InputField label="Months until gap-return" value={state[k('months_until_gap_return')]} min={6} max={48} onChange={v=>set(k('months_until_gap_return'),v)} note="Average 18-30 months." />
@@ -813,10 +816,15 @@ function App() {
       mbStarter, mbStandard, mbGrowth, mbPkgRev, mbIncludedCohorts, mbAddOnCohorts, mbAddOnRev, mbRev, mbTotalRev, mbNetMargin, mbPilotDrag, mbContribution, mbNetAfterFunders };
   }, [state]);
 
-  // ═══ 5-YEAR FORECAST ═══
-  // Structured rollup: tracks IPP pipeline by cohort year (3-year conversion window),
-  // partner book by tenure (year_1 vs tenured), and a lapsed-return pool that adds
-  // gap-then-renewal orgs back into the tenured book after months_until_gap_return.
+  // ═══ 5-YEAR FORECAST (Phase 2: explicit state machine) ═══
+  // Every org occupies exactly one state each year. Transitions are driven by the
+  // structured pipeline/retention variables. States:
+  //   PENDING[age]     — completed IPP but hasn't executed a license (age 1, 2, or 3)
+  //   NEW_ACTIVE       — year-1 partner that ran ≥1 cohort
+  //   NEW_DORMANT      — year-1 partner that paid but never activated (Buffalo Sewer / NRG)
+  //   TENURED          — year-2+ partner (internal tier distribution applied)
+  //   LAPSED[age]      — didn't renew; may gap-return within 3 years
+  //   CHURNED_PERMANENT — pipeline-window expired or 3+ years post-lapse (running total)
   const forecast = useMemo(() => {
     const s = state;
     const startPartners = calc.totalPartners;
@@ -826,17 +834,14 @@ function App() {
     const years=[];
 
     // ── State carried across years ──
-    // Pipeline: orgs that completed IPP in prior years and still might convert.
-    // Index = years since IPP completion (1 = last year, 2 = 2 years ago).
-    // Each year, ipp completions enter at index 0, age up, and exit after year 3.
-    let pipelineByAge = [0, 0, 0]; // [age 1, age 2, age 3] from last 3 years
-    // Partner book split by tenure: year_1_book = partners in their first year on the book.
-    let year1Book = 0;
-    let tenuredBook = startPartners; // start: assume entire opening book is tenured
-    // Lapsed pool: orgs that didn't renew, indexed by years-since-lapse, may return.
-    let lapsedPool = [0, 0, 0]; // [age 1, age 2, age 3]
+    let pending = [0, 0, 0];        // PENDING age 1, 2, 3
+    let newActive = 0;               // NEW_ACTIVE (year-1 running cohorts)
+    let newDormant = 0;              // NEW_DORMANT (year-1 paid, not running)
+    let tenured = startPartners;     // TENURED (opening book assumed all tenured)
+    let lapsed = [0, 0, 0];          // LAPSED age 1, 2, 3
+    let churnedCumulative = 0;       // CHURNED_PERMANENT
 
-    const monthsToReturnYears = Math.max(1, Math.round((s.months_until_gap_return || 24) / 12));
+    const monthsToReturnYears = Math.max(1, Math.min(3, Math.round((s.months_until_gap_return || 24) / 12)));
 
     for (let yr=0; yr<5; yr++) {
       const feeEsc = Math.pow(1+s.feeEscalation/100, yr);
@@ -851,50 +856,95 @@ function App() {
         return sum + (Number(l.amount)||0) * Math.pow(1 + rate/100, yr);
       }, 0);
 
-      // ── 1. New IPP enrollments this year, derive convertible orgs entering pipeline ──
+      // ── 1. IPP this year feeds new orgs into the conversion pipeline ──
       const ippThisYear = (s.ipp_participants || 0) * pipeGrow;
       const convertible = ippThisYear * (1 - (s.pct_ipp_cwp_staff||0)/100 - (s.pct_ipp_individual||0)/100);
       const newOrgsToPipeline = convertible * (s.orgs_per_ipp_participant || 0);
 
-      // ── 2. New license conversions this year from pipeline cohorts ──
-      // Convention: when pipelineByAge[0..2] enters this year's calculation, each entry
-      // converts at its corresponding rate. New IPP entrants this year (newOrgsToPipeline)
-      // convert at year-1 rate immediately.
+      // ── 2. Conversions out of PENDING into the licensed book ──
       const conv1 = newOrgsToPipeline * (s.pct_convert_year_1 || 0)/100;
-      const conv2 = pipelineByAge[0] * (s.pct_convert_year_2 || 0)/100;
-      const conv3 = pipelineByAge[1] * (s.pct_convert_year_3plus || 0)/100;
+      const conv2 = pending[0] * (s.pct_convert_year_2 || 0)/100;
+      const conv3 = pending[1] * (s.pct_convert_year_3plus || 0)/100;
       const newLicenses = conv1 + conv2 + conv3;
 
-      // ── 3. Lapsed-return: orgs that lapsed N years ago return at gap-return rate ──
-      // The full lapsed pool that's eligible has aged enough to return.
-      const eligibleLapsed = lapsedPool[monthsToReturnYears - 1] || 0;
+      // Pending age 3 orgs that don't convert this year → CHURNED_PERMANENT
+      const pendingExpired = (pending[2] || 0) - (pending[2] || 0) * (s.pct_convert_year_3plus || 0)/100;
+      // (Already covered by conv3 above; residual from age 3 after conv3 applies.)
+      // Simpler: age-3 orgs either convert (counted in conv3) or churn here.
+      const pendingChurn = pending[2] - (pending[1] * (s.pct_convert_year_3plus || 0)/100);
+      // actually the logic is: at year start, age-3 = pending[2] (entered as age 2 last year).
+      // conv3 already applied to pending[1] (which aged from last year's age 1). That's a mismatch.
+      // Let me keep the conversion indexing consistent with Phase 1 (conv2 from pending[0], conv3 from pending[1]),
+      // and treat pending[2] (orgs that didn't convert in years 2 or 3) as churn candidates.
+      const pendingChurnThisYear = pending[2]; // age-3 orgs at start of year that didn't convert in earlier chances
+
+      // ── 3. Prior year's NEW_ACTIVE transitions ──
+      // Renews at year_1_renewal_rate → TENURED; else → LAPSED age 0
+      const naRetained = newActive * (s.year_1_renewal_rate || 0)/100;
+      const naLapsed = newActive - naRetained;
+
+      // ── 4. Prior year's NEW_DORMANT transitions ──
+      // Much lower renewal (dormant_year_1_renewal_rate) because they didn't experience value.
+      // Those who renew flow into TENURED (they may or may not activate; the tenured distribution
+      // already includes a dormant tier to catch ongoing non-delivery).
+      const ndRetained = newDormant * (s.dormant_year_1_renewal_rate || 0)/100;
+      const ndLapsed = newDormant - ndRetained;
+
+      // ── 5. Prior year's TENURED transitions ──
+      const tenRetained = tenured * (s.year_2plus_renewal_rate || 0)/100;
+      const tenLapsed = tenured - tenRetained;
+
+      // ── 6. Lapsed-return: orgs at the gap-return age slot come back as TENURED ──
+      const eligibleLapsedSlot = monthsToReturnYears - 1;
+      const eligibleLapsed = lapsed[eligibleLapsedSlot] || 0;
       const returningOrgs = eligibleLapsed * (s.pct_lapsed_return_within_3yr || 0)/100;
 
-      // ── 4. Apply renewal to last year's book to compute carryover ──
-      // year1Book → graduates to tenured at year_1_renewal_rate; rest go to lapsed pool
-      // tenuredBook → retains at year_2plus_renewal_rate; rest go to lapsed pool
-      const y1Retained = year1Book * (s.year_1_renewal_rate || 0)/100;
-      const y1Lapsed = year1Book - y1Retained;
-      const tenRetained = tenuredBook * (s.year_2plus_renewal_rate || 0)/100;
-      const tenLapsed = tenuredBook - tenRetained;
+      // ── 7. Lapsed age-3 who don't return → CHURNED_PERMANENT ──
+      // If the gap-return slot IS age 3, subtract returningOrgs; otherwise age-3 orgs all churn.
+      const age3IsEligible = (eligibleLapsedSlot === 2);
+      const lapsedAge3 = lapsed[2] || 0;
+      const lapsedChurn = age3IsEligible ? (lapsedAge3 - returningOrgs) : lapsedAge3;
 
-      // ── 5. New tenure book composition for THIS year ──
-      year1Book = newLicenses;
-      tenuredBook = y1Retained + tenRetained + returningOrgs;
-      const partners = year1Book + tenuredBook;
+      // ── 8. Apply new license activations → NEW_ACTIVE vs NEW_DORMANT ──
+      const newActivations = newLicenses * (s.pct_activate_year_1 || 0)/100;
+      const newDormants = newLicenses - newActivations;
 
-      // ── 6. Cohort production via tiered distribution (applied to total partners) ──
-      // Year-1 partners get their first-year activation discount; tenured run at full distribution.
+      // ── 9. Compose new state for THIS year ──
+      newActive = newActivations;
+      newDormant = newDormants;
+      tenured = naRetained + ndRetained + tenRetained + returningOrgs;
+      churnedCumulative += pendingChurnThisYear + lapsedChurn;
+
+      // Age pipeline: new entrants become age-1 next iteration; age-1 → age-2; age-2 → age-3
+      // Residual (non-converted) portion of each age moves up. Age-3 doesn't carry forward.
+      const pendingNextAge1 = newOrgsToPipeline - conv1;
+      const pendingNextAge2 = pending[0] - conv2;
+      const pendingNextAge3 = pending[1] - conv3;
+      pending = [pendingNextAge1, pendingNextAge2, pendingNextAge3];
+
+      // Age lapsed pool: new lapses enter at age 1; others age up; age-3 either returns or churns (already subtracted above)
+      const lapsedNextAge1 = naLapsed + ndLapsed + tenLapsed;
+      const lapsedNextAge2 = lapsed[0] - (eligibleLapsedSlot === 0 ? returningOrgs : 0);
+      const lapsedNextAge3 = lapsed[1] - (eligibleLapsedSlot === 1 ? returningOrgs : 0);
+      lapsed = [Math.max(0, lapsedNextAge1), Math.max(0, lapsedNextAge2), Math.max(0, lapsedNextAge3)];
+
+      const partners = newActive + newDormant + tenured;
+      const year1Book = newActive + newDormant; // for display / revenue continuity
+      const tenuredBook = tenured;
+
+      // ── 10. Cohort production via tiered distribution ──
+      // Tenured book runs full distribution. NEW_ACTIVE runs at steady-tier output (they activated).
+      // NEW_DORMANT contributes zero cohorts (they paid, didn't deliver).
       const dist = (which) => (s[which] || 0)/100;
       const tenuredCohorts = tenuredBook * (
         dist('pct_orgs_high_volume') * (s.cohorts_per_high_volume || 0)
         + dist('pct_orgs_steady') * (s.cohorts_per_steady || 0)
         + dist('pct_orgs_occasional') * (s.cohorts_per_occasional || 0)
-        // dormant tier always 0
+        // dormant tier always 0 — the tenured book's own dormancy is internal to the distribution
       );
-      // year-1 cohort: assume new partners run at "steady" tier output, discounted by activation%
-      const year1Cohorts = year1Book * (s.pct_activate_year_1 || 0)/100 * (s.cohorts_per_steady || 0);
-      const cohorts = tenuredCohorts + year1Cohorts;
+      const year1ActiveCohorts = newActive * (s.cohorts_per_steady || 0);
+      // newDormant contributes 0 — they paid but never delivered
+      const cohorts = tenuredCohorts + year1ActiveCohorts;
       const participants = cohorts * (s.avg_participants_per_cohort || 0);
       const certs = participants * (s.cert_completion_rate || 0)/100;
 
@@ -954,19 +1004,16 @@ function App() {
 
       years.push({ year:yr+1, calendarYear, label:calendarYear.toString(),
         partners, year1Book, tenuredBook, newIPP, newLicenses,
+        // state-machine counts for Phase 2 reporting
+        stateNewActive: newActive, stateNewDormant: newDormant, stateTenured: tenured,
+        statePending: pending.reduce((a,b)=>a+b, 0),
+        stateLapsed: lapsed.reduce((a,b)=>a+b, 0),
+        stateChurnedCum: churnedCumulative,
+        returningOrgs, lapsedChurnThisYear: lapsedChurn, pendingChurnThisYear,
         cohorts, participants, certs,
         currentRev, maRev, mbRev, totalCost, fixedCost:fixedTotal, variableCost:ippCost+cohortCost+certCost,
         reaccredSpike:isReaccred?s.reaccredCost:0,
         chosenRev, netMargin, marginPct:chosenRev>0?netMargin/chosenRev:0, cumRevenue, cumCost, cumMargin });
-
-      // ── 7. Roll pipeline / lapsed pool forward to next year ──
-      // Pipeline aging: this year's new IPP entrants become age 1 next year; age 1 → age 2; age 2 → age 3 (then drop).
-      pipelineByAge = [newOrgsToPipeline, pipelineByAge[0], pipelineByAge[1]];
-      // Lapsed pool: this year's lapses enter at age 1, others age up; pool empties after 3 years.
-      // Returning orgs are removed from the eligible-age slot.
-      const remainingEligible = (lapsedPool[monthsToReturnYears - 1] || 0) - returningOrgs;
-      lapsedPool = lapsedPool.map((v, i) => i === monthsToReturnYears - 1 ? Math.max(0, remainingEligible) : v);
-      lapsedPool = [y1Lapsed + tenLapsed, lapsedPool[0], lapsedPool[1]];
     }
     return { years, breakEvenYear };
   }, [state, calc]);
@@ -1587,6 +1634,44 @@ function OutlookTab({ state, calc, forecast, set }) {
         </div>
       </Card>
 
+      {/* Partner book evolution by state */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>Partner Book Evolution (by state)</div>
+        <div style={{ fontSize:11, color:GRAY500, marginBottom:10 }}>
+          Each org occupies exactly one state per year. PENDING = completed IPP but not yet licensed.
+          NEW_DORMANT = paid but never activated (Buffalo Sewer / NRG signal).
+          LAPSED may return within 3 years; otherwise flows to CHURNED_PERMANENT.
+        </div>
+        <div style={{ width:'100%', height:280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={years.map(y=>({
+              name:y.label,
+              NEW_ACTIVE: Math.round(y.stateNewActive*10)/10,
+              NEW_DORMANT: Math.round(y.stateNewDormant*10)/10,
+              TENURED: Math.round(y.stateTenured*10)/10,
+              PENDING: Math.round(y.statePending*10)/10,
+              LAPSED: Math.round(y.stateLapsed*10)/10,
+              CHURNED_PERM: Math.round(y.stateChurnedCum*10)/10,
+            }))} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="name" fontSize={11} />
+              <YAxis fontSize={11} />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize:11 }} />
+              <Bar dataKey="NEW_ACTIVE" stackId="live" fill={GREEN} />
+              <Bar dataKey="NEW_DORMANT" stackId="live" fill={AMBER} />
+              <Bar dataKey="TENURED" stackId="live" fill={BLUE} />
+              <Bar dataKey="PENDING" stackId="pipeline" fill={TEAL} />
+              <Bar dataKey="LAPSED" stackId="risk" fill={ORANGE} />
+              <Bar dataKey="CHURNED_PERM" stackId="risk" fill={RED} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>
+          "live" bar = active partner book (paying licensees this year). "pipeline" = pending conversions. "risk" = lapsed (recoverable) + permanent churn.
+        </div>
+      </Card>
+
       {/* Detail table */}
       <Card>
         <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Year-by-Year Detail ({s.forecastModel==='a'?'Model A':s.forecastModel==='b'?'Model B':'Current'})</div>
@@ -1600,8 +1685,20 @@ function OutlookTab({ state, calc, forecast, set }) {
               </tr>
             </thead>
             <tbody>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Partners</td>
-                {years.map(y=><td key={y.year} style={tdS}>{y.partners}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Partners (active book)</td>
+                {years.map(y=><td key={y.year} style={tdS}>{y.partners.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:GREEN, paddingLeft:18 }}>{'\u2192'} NEW_ACTIVE</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:GREEN }}>{y.stateNewActive.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:AMBER, paddingLeft:18 }}>{'\u2192'} NEW_DORMANT</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:AMBER }}>{y.stateNewDormant.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:BLUE, paddingLeft:18 }}>{'\u2192'} TENURED</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:BLUE }}>{y.stateTenured.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:TEAL }}>Pending (pipeline)</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:TEAL }}>{y.statePending.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:ORANGE }}>Lapsed (recoverable)</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:ORANGE }}>{y.stateLapsed.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:RED }}>Churned permanent (cum.)</td>
+                {years.map(y=><td key={y.year} style={{ ...tdS, color:RED }}>{y.stateChurnedCum.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
               <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:BLUE }}>Revenue</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(y.chosenRev)}</td>)}
                 <td style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(yr5.cumRevenue)}</td></tr>
