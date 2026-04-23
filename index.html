@@ -619,7 +619,7 @@ function App() {
     return local ? { ...defaults, ...migrateState(local) } : { ...defaults };
   });
   const [activeTab, setActiveTab] = useState('Current State');
-  const [whatIfModel, setWhatIfModel] = useState('a');
+  const [whatIfModel, setWhatIfModel] = useState('pr');
   const [editTierFees, setEditTierFees] = useState(false);
   const [saves, setSaves] = useState([]);
   const [saveStatus, setSaveStatus] = useState('');
@@ -1296,41 +1296,45 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
 
   return (
     <div>
-      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Design a new pricing structure. Compare against the current instructor-tier model side by side.</div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>Set your pipeline & retention assumptions first, then compare pricing models side by side against the current instructor-tier structure.</div>
 
-      <div style={{ marginBottom:16 }}>
-        <PipelineRetentionCard state={state} calc={calc} set={set} prefix="model_" />
-        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Separate from Current State — these assumptions drive Model A and Model B only. Current State stays on its own pipeline/retention.</div>
-      </div>
-
-      {/* Model selector */}
+      {/* Sub-tab selector: Pipeline & Retention precedes the model options */}
       <div style={{ display:'flex', gap:0, background:GRAY100, borderRadius:8, padding:3, marginBottom:20, border:'1px solid '+GRAY200 }}>
+        <button onClick={()=>setWhatIfModel('pr')} style={{ flex:1, padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer', background:whatIfModel==='pr'?'white':'transparent', color:whatIfModel==='pr'?BLUE:GRAY500, boxShadow:whatIfModel==='pr'?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif" }}>Pipeline & Retention</button>
         <button onClick={()=>setWhatIfModel('a')} style={{ flex:1, padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer', background:whatIfModel==='a'?'white':'transparent', color:whatIfModel==='a'?TEAL:GRAY500, boxShadow:whatIfModel==='a'?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif" }}>Model A: Per-Cohort</button>
         <button onClick={()=>setWhatIfModel('b')} style={{ flex:1, padding:'10px 16px', fontSize:13, fontWeight:600, borderRadius:6, border:'none', cursor:'pointer', background:whatIfModel==='b'?'white':'transparent', color:whatIfModel==='b'?PURPLE:GRAY500, boxShadow:whatIfModel==='b'?'0 1px 3px rgba(0,0,0,0.1)':'none', fontFamily:"'Inter',sans-serif" }}>Model B: Cohort Packages</button>
       </div>
 
+      {whatIfModel==='pr' && (
+        <div>
+          <PipelineRetentionCard state={state} calc={calc} set={set} prefix="model_" />
+          <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Separate from Current State — these assumptions drive Model A and Model B only. Current State stays on its own pipeline/retention.</div>
+        </div>
+      )}
       {whatIfModel==='a' && <ModelAPanel state={state} calc={calc} set={set} />}
       {whatIfModel==='b' && <ModelBPanel state={state} calc={calc} set={set} />}
 
-      {/* Revenue comparison chart */}
-      <Card style={{ marginTop:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue Comparison by Partner Count</div>
-        <div style={{ width:'100%', height:300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={compData} margin={{ top:5,right:20,bottom:5,left:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
-              <XAxis dataKey="partners" label={{ value:'# Partners', position:'insideBottom', offset:-2, fontSize:11 }} fontSize={11} />
-              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
-              <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+' partners'} />
-              <Legend />
-              <Line type="monotone" dataKey="Current" stroke={BLUE} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Model A" stroke={TEAL} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Model B" stroke={PURPLE} strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Revenue only (excludes IPP + grants). Shows how each model scales with partner growth.</div>
-      </Card>
+      {/* Revenue comparison chart — only on model tabs, since P&R drives the inputs */}
+      {whatIfModel!=='pr' && (
+        <Card style={{ marginTop:16 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:16 }}>Revenue Comparison by Partner Count</div>
+          <div style={{ width:'100%', height:300 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={compData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+                <XAxis dataKey="partners" label={{ value:'# Partners', position:'insideBottom', offset:-2, fontSize:11 }} fontSize={11} />
+                <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+                <Tooltip formatter={v=>fmt(v)} labelFormatter={v=>v+' partners'} />
+                <Legend />
+                <Line type="monotone" dataKey="Current" stroke={BLUE} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Model A" stroke={TEAL} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Model B" stroke={PURPLE} strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>Revenue only (excludes IPP + grants). Shows how each model scales with partner growth.</div>
+        </Card>
+      )}
     </div>
   );
 }
