@@ -251,6 +251,10 @@ const defaults = {
   pipelineGrowth: 10,
   grantGrowthRate: 0,
   forecastModel: 'current',
+  // Per-year program-budget overrides (5 slots, one per forecast year).
+  // 0 = fall back to the computed budgetLines × sub-category markup.
+  // Reaccred cost is layered on top of whichever value wins.
+  forecastFixedCostOverrides: [0, 0, 0, 0, 0],
 };
 
 // Migration: convert legacy flat cost fields to budget lines, and fold the old
@@ -1012,7 +1016,11 @@ function App() {
       }
 
       // Costs (same for all models)
-      const fixedTotal = budgetLinesEsc + (isReaccred ? s.reaccredCost : 0);
+      // If the user has entered a per-year program-cost override for this year, use it
+      // in place of the computed budgetLinesEsc. Reaccred spike stays layered on top.
+      const override = Number((s.forecastFixedCostOverrides || [])[yr]) || 0;
+      const fixedBudget = override > 0 ? override : budgetLinesEsc;
+      const fixedTotal = fixedBudget + (isReaccred ? s.reaccredCost : 0);
       const ippCost = ippThisYear*s.costPerIPP*varCostInf;
       const cohortCost = cohorts*s.costPerCohort*varCostInf;
       const partnerCost = partners*(s.costPerPartner||0)*varCostInf;
@@ -1034,6 +1042,7 @@ function App() {
         returningOrgs, lapsedChurnThisYear: lapsedChurn, pendingChurnThisYear,
         cohorts, participants, certs,
         currentRev, maRev, mbRev, totalCost, fixedCost:fixedTotal, variableCost:ippCost+cohortCost+certCost,
+        fixedBudgetComputed: budgetLinesEsc, fixedBudgetOverride: override,
         reaccredSpike:isReaccred?s.reaccredCost:0,
         chosenRev, netMargin, marginPct:chosenRev>0?netMargin/chosenRev:0, cumRevenue, cumCost, cumMargin });
     }
@@ -1797,6 +1806,44 @@ function OutlookTab({ state, calc, forecast, set }) {
               <InputField key={cat} label={cat} value={(s.subCategoryMarkups||{})[cat] ?? 0} min={0} max={20} step={0.5}
                 onChange={v=>set('subCategoryMarkups', { ...(s.subCategoryMarkups||{}), [cat]: v })} unit="%" />
             ))}
+          </div>
+        </Accordion>
+        <Accordion label="Advanced · Program cost by year" hint="Override the program budget for any year. Leave at $0 to use the computed value.">
+          <div style={{ fontSize:12, color:GRAY500, marginBottom:10 }}>
+            Type a dollar amount to lock in that year's program budget. Zero means "fall back to the computed value" (budget lines × sub-category markup). Reaccreditation cost is added on top of whichever value wins.
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:'0 12px' }}>
+            {years.map((y, i) => {
+              const override = (s.forecastFixedCostOverrides || [])[i] || 0;
+              const using = override > 0 ? override : y.fixedBudgetComputed;
+              return (
+                <InputField
+                  key={y.year}
+                  label={y.label}
+                  value={override}
+                  min={0}
+                  max={5000000}
+                  step={1000}
+                  onChange={v => {
+                    const next = [...(s.forecastFixedCostOverrides || [0,0,0,0,0])];
+                    while (next.length < 5) next.push(0);
+                    next[i] = Math.max(0, Number(v) || 0);
+                    set('forecastFixedCostOverrides', next);
+                  }}
+                  prefix="$"
+                  note={override > 0 ? 'override active' : 'computed: '+fmt(y.fixedBudgetComputed)}
+                />
+              );
+            })}
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:8, padding:'8px 10px', background:GRAY50, borderRadius:6, border:'1px solid '+GRAY200 }}>
+            <span style={{ fontSize:11, color:GRAY500 }}>
+              Any year at $0 uses the computed value from your Program Budget + markup above.
+            </span>
+            <button
+              onClick={() => set('forecastFixedCostOverrides', [0,0,0,0,0])}
+              style={{ padding:'4px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}
+            >Clear all overrides</button>
           </div>
         </Accordion>
         <div style={{ display:'flex', gap:8, marginTop:8 }}>
