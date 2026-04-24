@@ -348,7 +348,7 @@ function InputField({ label, value, min, max, step, onChange, prefix, note, unit
         {prefix === '$' && <span style={{ fontSize:13, color:GRAY500 }}>$</span>}
         <input type="number" value={lv} min={min} max={max} step={step||1}
           onChange={e => { setLv(e.target.value); const v = Number(e.target.value); if (!isNaN(v)) onChange(v); }}
-          onBlur={() => { let v=Number(lv); if(isNaN(v))v=min||0; if(min!=null)v=Math.max(min,v); if(max!=null)v=Math.min(max,v); setLv(String(v)); onChange(v); }}
+          onBlur={() => { let v=Number(lv); if(isNaN(v))v=min||0; if(min!=null)v=Math.max(min,v); setLv(String(v)); onChange(v); }}
           style={{ width:'100%', maxWidth:160, padding:'6px 10px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:14, fontWeight:600, textAlign:'right', fontFamily:"'Inter',sans-serif" }} />
         {suffix && <span style={{ fontSize:13, color:GRAY500 }}>{suffix}</span>}
       </div>
@@ -1541,10 +1541,10 @@ function ModelAPanel({ state, calc, set }) {
 
         <Accordion label="Advanced · customize Model A fees" hint="Fine-tune the individual knobs an analyst would turn" tone={TEAL}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-            <InputField label="Annual license fee (flat)" value={s.modelA_annualFee} min={0} max={10000} step={100} onChange={v=>set('modelA_annualFee',v)} prefix="$" note="Per partner, not per instructor" />
+            <InputField label="Annual license fee (flat)" value={s.modelA_annualFee} min={0} max={100000} step={100} onChange={v=>set('modelA_annualFee',v)} prefix="$" note="Per partner, not per instructor" />
             <InputField label="Small cohort threshold" value={s.modelA_threshold} min={2} max={15} onChange={v=>set('modelA_threshold',v)} note="Below this = small cohort" />
-            <InputField label={'Small cohort fee (< '+s.modelA_threshold+')'} value={s.modelA_smallCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_smallCohortFee',v)} prefix="$" />
-            <InputField label={'Large cohort fee ('+s.modelA_threshold+'+ participants)'} value={s.modelA_largeCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_largeCohortFee',v)} prefix="$" />
+            <InputField label={'Small cohort fee (< '+s.modelA_threshold+')'} value={s.modelA_smallCohortFee} min={0} max={50000} step={25} onChange={v=>set('modelA_smallCohortFee',v)} prefix="$" />
+            <InputField label={'Large cohort fee ('+s.modelA_threshold+'+ participants)'} value={s.modelA_largeCohortFee} min={0} max={50000} step={25} onChange={v=>set('modelA_largeCohortFee',v)} prefix="$" />
             <InputField label="% of cohorts that are small" value={s.modelA_pctSmall} min={0} max={100} onChange={v=>set('modelA_pctSmall',v)} unit="%" />
           </div>
 
@@ -1553,8 +1553,8 @@ function ModelAPanel({ state, calc, set }) {
             <div style={{ background:'#f0fdfa', border:'1px solid '+TEAL+'33', borderRadius:8, padding:14, marginBottom:12 }}>
               <div style={{ fontSize:13, fontWeight:700, color:TEAL, marginBottom:8 }}>Pilot Discount</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-                <InputField label="Pilot annual fee" value={s.modelA_pilotFee} min={0} max={5000} step={50} onChange={v=>set('modelA_pilotFee',v)} prefix="$" />
-                <InputField label="Pilot cohort fee" value={s.modelA_pilotCohortFee} min={0} max={3000} step={25} onChange={v=>set('modelA_pilotCohortFee',v)} prefix="$" />
+                <InputField label="Pilot annual fee" value={s.modelA_pilotFee} min={0} max={50000} step={50} onChange={v=>set('modelA_pilotFee',v)} prefix="$" />
+                <InputField label="Pilot cohort fee" value={s.modelA_pilotCohortFee} min={0} max={50000} step={25} onChange={v=>set('modelA_pilotCohortFee',v)} prefix="$" />
                 <InputField label="Pilot partners" value={s.modelA_pilotPartners} min={0} max={20} onChange={v=>set('modelA_pilotPartners',v)} />
                 <InputField label="Pilot duration (years)" value={s.modelA_pilotDuration} min={1} max={3} onChange={v=>set('modelA_pilotDuration',v)} />
                 <InputField label="% convert to full rate" value={s.modelA_pilotConvertPct} min={0} max={100} onChange={v=>set('modelA_pilotConvertPct',v)} unit="%" />
@@ -1649,8 +1649,8 @@ function ModelBPanel({ state, calc, set }) {
         </div>
 
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-          <InputField label="Base annual license fee" value={s.modelB_baseLicense} min={0} max={10000} step={50} onChange={v=>set('modelB_baseLicense',v)} prefix="$" note="Every partner pays this — includes 1 cohort" />
-          <InputField label="Extra cohort (no package)" value={s.modelB_addOnCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelB_addOnCohortFee',v)} prefix="$" note="Per additional cohort without a package deal" />
+          <InputField label="Base annual license fee" value={s.modelB_baseLicense} min={0} max={100000} step={50} onChange={v=>set('modelB_baseLicense',v)} prefix="$" note="Every partner pays this — includes 1 cohort" />
+          <InputField label="Extra cohort (no package)" value={s.modelB_addOnCohortFee} min={0} max={50000} step={25} onChange={v=>set('modelB_addOnCohortFee',v)} prefix="$" note="Per additional cohort without a package deal" />
         </div>
 
         <SectionDivider label="Package Tiers" />
@@ -1674,7 +1674,7 @@ function ModelBPanel({ state, calc, set }) {
               <Card key={pkg.name} style={{ background:'#faf5ff', padding:'12px' }}>
                 <input type="text" value={pkgName} onChange={e=>set('modelB_'+pkg.name,e.target.value)} style={{ width:'100%', padding:'4px 8px', border:'1px solid '+GRAY200, borderRadius:4, fontSize:14, fontWeight:700, color:PURPLE, marginBottom:8, textAlign:'center' }} />
                 <InputField label="Total cohorts" value={pkgCohorts} min={1} max={10} onChange={v=>set('modelB_'+pkg.cohorts,v)} />
-                {extraCohorts > 0 && <InputField label="Per-cohort rate (extra)" value={pkgRate} min={0} max={5000} step={25} onChange={v=>set('modelB_'+pkg.rate,v)} prefix="$" note={extraCohorts+' extra beyond base'} />}
+                {extraCohorts > 0 && <InputField label="Per-cohort rate (extra)" value={pkgRate} min={0} max={50000} step={25} onChange={v=>set('modelB_'+pkg.rate,v)} prefix="$" note={extraCohorts+' extra beyond base'} />}
                 <div style={{ borderTop:'1px solid '+PURPLE+'22', paddingTop:8, marginTop:4 }}>
                   <div style={{ fontSize:16, fontWeight:700, color:PURPLE }}>{fmt(totalFee)}/yr</div>
                   <div style={{ fontSize:12, color:GRAY700, marginTop:2 }}>
@@ -1708,7 +1708,7 @@ function ModelBPanel({ state, calc, set }) {
           <div style={{ background:'#faf5ff', border:'1px solid '+PURPLE+'33', borderRadius:8, padding:14, marginBottom:12 }}>
             <div style={{ fontSize:13, fontWeight:700, color:PURPLE, marginBottom:8 }}>Pilot Discount</div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-              <InputField label="Pilot package fee" value={s.modelB_pilotFee} min={0} max={5000} step={50} onChange={v=>set('modelB_pilotFee',v)} prefix="$" note="Discounted rate for pilot partners" />
+              <InputField label="Pilot package fee" value={s.modelB_pilotFee} min={0} max={50000} step={50} onChange={v=>set('modelB_pilotFee',v)} prefix="$" note="Discounted rate for pilot partners" />
               <InputField label="Pilot partners" value={s.modelB_pilotPartners} min={0} max={20} onChange={v=>set('modelB_pilotPartners',v)} />
               <InputField label="Pilot duration (years)" value={s.modelB_pilotDuration} min={1} max={3} onChange={v=>set('modelB_pilotDuration',v)} />
               <InputField label="% convert to full rate" value={s.modelB_pilotConvertPct} min={0} max={100} onChange={v=>set('modelB_pilotConvertPct',v)} unit="%" />
