@@ -389,6 +389,25 @@ function Toggle({ label, value, onChange }) {
   );
 }
 
+// Accordion used to hide analyst-only knobs behind an "Advanced" reveal. Closed by default.
+function Accordion({ label, hint, children, defaultOpen=false, tone=GRAY500 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ border:'1px dashed '+GRAY200, borderRadius:8, padding:'8px 12px', marginTop:12, background:GRAY50 }}>
+      <button onClick={()=>setOpen(!open)} style={{
+        width:'100%', display:'flex', justifyContent:'space-between', alignItems:'center',
+        padding:0, background:'none', border:'none', cursor:'pointer', fontFamily:"'Inter',sans-serif"
+      }}>
+        <span style={{ fontSize:12, fontWeight:700, color:tone, textTransform:'uppercase', letterSpacing:'0.03em' }}>
+          {open ? '▾' : '▸'} {label}
+        </span>
+        {hint && <span style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginLeft:12 }}>{hint}</span>}
+      </button>
+      {open && <div style={{ marginTop:12 }}>{children}</div>}
+    </div>
+  );
+}
+
 // ─── STRUCTURED PIPELINE/RETENTION HELPERS ───
 // Sum-to-100 enforcement: warning + normalize button.
 // Used for IPP-conversion timing buckets and cohort-production distribution tiers.
@@ -434,8 +453,8 @@ function RegimeOverride({ state, set, prefix='' }) {
   };
   const current = state.ippConversionRegime || 'post-LMS';
   return (
-    <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, fontSize:12 }}>
-      <span style={{ color:GRAY500, fontWeight:600 }}>Regime:</span>
+    <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, fontSize:12, flexWrap:'wrap' }}>
+      <span style={{ color:GRAY500, fontWeight:600 }}>Historical preset:</span>
       {Object.keys(REGIME_PRESETS).map(r => (
         <button key={r} onClick={()=>apply(r)} style={{
           padding:'4px 10px', fontSize:11, fontWeight:600, borderRadius:6,
@@ -445,7 +464,7 @@ function RegimeOverride({ state, set, prefix='' }) {
         }}>{r}</button>
       ))}
       <span style={{ fontSize:11, color:GRAY500, fontStyle:'italic' }}>
-        Sets IPP conversion + renewal defaults. Edit individual fields to override.
+        Loads typical conversion + renewal rates from that era. You can still edit any field below.
       </span>
     </div>
   );
@@ -494,11 +513,14 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
   return (
     <Card>
       <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:8 }}>Pipeline & Retention</div>
+      <div style={{ fontSize:12, color:GRAY500, marginBottom:10 }}>
+        How new orgs enter the program (via IPP workshops), become paying licensees, deliver cohorts, and renew year over year.
+      </div>
       <RegimeOverride state={state} set={set} prefix={prefix} />
 
       {/* [A] IPP Pipeline */}
       <div style={{ marginBottom:12 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>A · IPP Pipeline</div>
+        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>A · New Org Pipeline (IPP workshops)</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
           <InputField label="IPP participants/yr" value={state[k('ipp_participants')]} min={0} max={50} onChange={v=>set(k('ipp_participants'),v)} note="Total seats filled per year." />
           <InputField label="IPP fee" value={state[k('feeIPP')]} min={0} max={10000} step={100} onChange={v=>set(k('feeIPP'),v)} prefix="$" />
@@ -527,7 +549,7 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
 
       {/* [B] License Activation */}
       <div style={{ marginBottom:12 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>B · License Activation</div>
+        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>B · License Activation (do new partners actually start?)</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
           <InputField label="% activate in year 1" value={state[k('pct_activate_year_1')]} min={0} max={100} step={0.5} onChange={v=>set(k('pct_activate_year_1'),v)} unit="%" note="Newly licensed orgs that run ≥1 cohort in year 1. Buffalo Sewer / NRG didn't." />
           <InputField label="Months to first cohort" value={state[k('months_to_first_cohort')]} min={1} max={18} onChange={v=>set(k('months_to_first_cohort'),v)} note="Display only — affects planning notes." />
@@ -536,7 +558,7 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
 
       {/* [C] Cohort Production Distribution */}
       <SumTo100Group
-        label="C · Cohort Production Distribution"
+        label="C · How Active Are Partners? (cohort delivery mix)"
         fields={['pct_orgs_high_volume','pct_orgs_steady','pct_orgs_occasional','pct_orgs_dormant']}
         state={state} set={set} prefix={prefix}
       >
@@ -561,7 +583,7 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
 
       {/* [D] Retention */}
       <div style={{ marginBottom:12 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>D · Retention</div>
+        <div style={{ fontSize:11, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.03em', marginBottom:6 }}>D · Renewals & Retention</div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
           <InputField label="Year-1 renewal rate (active)" value={state[k('year_1_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('year_1_renewal_rate'),v)} unit="%" note="First renewal decision for orgs who DID activate. Still highest-risk bucket." />
           <InputField label="Year-1 renewal rate (dormant)" value={state[k('dormant_year_1_renewal_rate')]} min={0} max={100} step={0.5} onChange={v=>set(k('dormant_year_1_renewal_rate'),v)} unit="%" note="Paid but never activated — renew much less. Buffalo Sewer / NRG signal." />
@@ -599,7 +621,7 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
   );
 }
 
-const TABS = ['Current State','What If','5-Year Outlook','Break-Even Analysis'];
+const TABS = ['Summary','Current State','What If','5-Year Outlook','Break-Even Analysis'];
 
 // Synchronous localStorage persistence so inputs survive refresh without waiting
 // for Supabase. Supabase still handles cross-device sync on a debounce.
@@ -618,7 +640,7 @@ function App() {
     const local = readLocal();
     return local ? { ...defaults, ...migrateState(local) } : { ...defaults };
   });
-  const [activeTab, setActiveTab] = useState('Current State');
+  const [activeTab, setActiveTab] = useState('Summary');
   const [whatIfModel, setWhatIfModel] = useState('pr');
   const [editTierFees, setEditTierFees] = useState(false);
   const [saves, setSaves] = useState([]);
@@ -1072,6 +1094,7 @@ function App() {
       </div>
 
       <div style={{ padding:'20px 24px', maxWidth:1200, margin:'0 auto' }}>
+        {activeTab==='Summary' && <SummaryTab state={state} calc={calc} forecast={forecast} set={set} setActiveTab={setActiveTab} />}
         {activeTab==='Current State' && <CurrentStateTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
         {activeTab==='What If' && <WhatIfTab state={state} calc={calc} set={set} whatIfModel={whatIfModel} setWhatIfModel={setWhatIfModel} />}
         {activeTab==='5-Year Outlook' && <OutlookTab state={state} calc={calc} forecast={forecast} set={set} />}
@@ -1081,6 +1104,132 @@ function App() {
       <div style={{ textAlign:'center', padding:'24px 0', fontSize:11, color:GRAY400 }}>
         CWC Fee Strategy Model {'\u00B7'} Internal Use Only
       </div>
+    </div>
+  );
+}
+
+// ═══ SUMMARY TAB (management-friendly landing view) ═══
+// Read-only snapshot: picks a pricing model, shows headline numbers for it,
+// compares against the other two, and surfaces the 5-year margin line. No knobs.
+function SummaryTab({ state, calc, forecast, set, setActiveTab }) {
+  const s = state;
+  const c = calc;
+  const chosen = s.forecastModel || 'current';
+  const chosenRev = chosen==='a' ? c.maTotalRev : chosen==='b' ? c.mbTotalRev : c.totalRevenue;
+  const chosenNet = chosen==='a' ? c.maNetAfterFunders : chosen==='b' ? c.mbNetAfterFunders : c.currentNetAfterFunders;
+  const chosenLabel = chosen==='a' ? 'Model A · Per-Cohort' : chosen==='b' ? 'Model B · Packages' : 'Current Pricing';
+  const chosenColor = chosen==='a' ? TEAL : chosen==='b' ? PURPLE : BLUE;
+
+  const thisYearData = [
+    { name:'Current', Revenue: Math.round(c.totalRevenue), 'Net Margin': Math.round(c.currentNetAfterFunders) },
+    { name:'Model A', Revenue: Math.round(c.maTotalRev), 'Net Margin': Math.round(c.maNetAfterFunders) },
+    { name:'Model B', Revenue: Math.round(c.mbTotalRev), 'Net Margin': Math.round(c.mbNetAfterFunders) },
+  ];
+  const fiveYear = (forecast.years || []).map(y => ({
+    name: y.label,
+    Current: Math.round(y.currentRev - y.totalCost),
+    'Model A': Math.round(y.maRev - y.totalCost),
+    'Model B': Math.round(y.mbRev - y.totalCost),
+  }));
+  const yr5 = forecast.years?.[4];
+  const breakEvenYear = forecast.breakEvenYear;
+
+  const vsCurrent = chosenRev - c.totalRevenue;
+  const narrative = chosen==='current'
+    ? 'You are viewing today’s numbers under the existing instructor-tier pricing.'
+    : (vsCurrent>=0
+        ? `${chosenLabel} would generate ${fmt(vsCurrent)} more revenue this year than today’s pricing.`
+        : `${chosenLabel} would generate ${fmt(-vsCurrent)} less revenue this year than today’s pricing—but may attract more partners.`);
+
+  const pickBtn = (key, label, color) => (
+    <button key={key} onClick={()=>set('forecastModel', key)} style={{
+      padding:'10px 18px', fontSize:13, fontWeight:700, borderRadius:8,
+      border:'1.5px solid '+(chosen===key?color:GRAY200),
+      background: chosen===key?color:'white', color: chosen===key?'white':GRAY700,
+      cursor:'pointer', fontFamily:"'Inter',sans-serif", flex:1, minWidth:140
+    }}>{label}</button>
+  );
+
+  return (
+    <div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>
+        A one-screen snapshot for leadership. Pick a pricing model to see how this year and the next five years look under it.
+      </div>
+
+      {/* Pricing model picker */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:10 }}>Which pricing are we looking at?</div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {pickBtn('current', 'Current Pricing', BLUE)}
+          {pickBtn('a', 'Model A · Per-Cohort', TEAL)}
+          {pickBtn('b', 'Model B · Packages', PURPLE)}
+        </div>
+        <div style={{ fontSize:13, color:GRAY700, marginTop:12, padding:'10px 12px', background:GRAY50, borderRadius:6, border:'1px solid '+GRAY200 }}>
+          {narrative}
+        </div>
+      </Card>
+
+      {/* Big headline KPIs for the chosen model */}
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+        <StatCard label="This Year Revenue" value={fmt(chosenRev)} color={chosenColor} sub={chosenLabel} />
+        <StatCard label="Program Budget" value={fmt(c.fixedTotal)} color={GRAY900} sub={c.totalPartners+' partners'} />
+        <StatCard label={chosenNet>=0?'Surplus':'Funding Gap'} value={fmt(chosenNet)} color={chosenNet>=0?GREEN:RED} highlight={true} sub={chosenNet>=0?'revenue exceeds costs':'revenue short of costs'} />
+        {yr5 && <StatCard label="5-Year Margin" value={fmt(yr5.cumMargin)} color={yr5.cumMargin>=0?GREEN:RED} sub={breakEvenYear?'Break-even year '+breakEvenYear:'Break-even not reached'} />}
+      </div>
+
+      {/* Side-by-side revenue + net this year */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>This Year: Three Models Side-by-Side</div>
+        <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Revenue and net margin at your current partner count under each pricing option.</div>
+        <div style={{ width:'100%', height:260 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={thisYearData} margin={{ top:5,right:20,bottom:5,left:20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+              <XAxis dataKey="name" fontSize={12} />
+              <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+              <Tooltip formatter={v=>fmt(v)} />
+              <Legend />
+              <ReferenceLine y={0} stroke={GRAY400} strokeDasharray="4 4" />
+              <Bar dataKey="Revenue" fill={GREEN} />
+              <Bar dataKey="Net Margin" fill={BLUE} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* 5-year margin trajectory */}
+      {fiveYear.length > 0 && (
+        <Card style={{ marginBottom:16 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>5-Year Net Margin Trajectory</div>
+          <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Where each model lands in each of the next five years. Crossing above the dashed line means the program is in surplus that year.</div>
+          <div style={{ width:'100%', height:280 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={fiveYear} margin={{ top:5,right:20,bottom:5,left:20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
+                <XAxis dataKey="name" fontSize={11} />
+                <YAxis tickFormatter={v=>fmt(v)} fontSize={11} />
+                <Tooltip formatter={v=>fmt(v)} />
+                <Legend />
+                <ReferenceLine y={0} stroke={RED} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="Current" stroke={BLUE} strokeWidth={chosen==='current'?3:1.5} dot={{ r:3 }} />
+                <Line type="monotone" dataKey="Model A" stroke={TEAL} strokeWidth={chosen==='a'?3:1.5} dot={{ r:3 }} />
+                <Line type="monotone" dataKey="Model B" stroke={PURPLE} strokeWidth={chosen==='b'?3:1.5} dot={{ r:3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
+
+      {/* Deeper-dive links */}
+      <Card>
+        <div style={{ fontSize:13, fontWeight:700, color:GRAY900, marginBottom:8 }}>Want more detail?</div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button onClick={()=>setActiveTab('Current State')} style={{ padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Edit today’s numbers {'→'}</button>
+          <button onClick={()=>setActiveTab('What If')} style={{ padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Tune pricing models {'→'}</button>
+          <button onClick={()=>setActiveTab('5-Year Outlook')} style={{ padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Full 5-year forecast {'→'}</button>
+          <button onClick={()=>setActiveTab('Break-Even Analysis')} style={{ padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Break-even analysis {'→'}</button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1172,21 +1321,17 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
       {/* PROGRAM BUDGET */}
       <ProgramBudgetSection state={state} calc={calc} set={set} />
 
-      {/* PER-EVENT COSTS — pushed to the bottom since they only feed What If and 5-Year Outlook projections */}
-      <Card style={{ marginTop:16 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Per-Event Costs (for projections)</div>
-          <div style={{ fontSize:11, color:GRAY500 }}>Scales program costs with growth in What If & 5-Year Outlook</div>
-        </div>
+      {/* PER-EVENT COSTS — advanced (only feeds What If + 5-Year Outlook growth projections) */}
+      <Accordion label="Advanced · Growth scaling costs" hint="Only affects What-If and 5-Year Outlook projections, not today's numbers">
         <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginBottom:12 }}>
-          Additional staff time costs per IPP / partner renewal or new license / cohort documentation. These only kick in when modeling growth or forecasting 5 years out.
+          Per-event staff costs that kick in when modeling growth. Leave at 0 unless you want projections to scale cost up as IPP, partners, or cohorts grow.
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0 12px' }}>
           <InputField label="Per IPP onboarded" value={state.costPerIPP} min={0} max={5000} step={25} onChange={v=>set('costPerIPP',v)} prefix="$" note="× new IPP instructors/yr" />
           <InputField label="Per partner (renewal)" value={state.costPerPartner} min={0} max={5000} step={25} onChange={v=>set('costPerPartner',v)} prefix="$" note="× total partners — annual paperwork" />
           <InputField label="Per cohort documentation" value={state.costPerCohort} min={0} max={5000} step={25} onChange={v=>set('costPerCohort',v)} prefix="$" note="× anticipated cohorts/yr" />
         </div>
-      </Card>
+      </Accordion>
     </div>
   );
 }
@@ -1339,9 +1484,27 @@ function WhatIfTab({ state, calc, set, whatIfModel, setWhatIfModel }) {
   );
 }
 
+const MODEL_A_PRESETS = {
+  Conservative: { modelA_annualFee:600, modelA_smallCohortFee:500, modelA_largeCohortFee:900, modelA_threshold:8, modelA_pctSmall:50 },
+  Balanced:     { modelA_annualFee:1000, modelA_smallCohortFee:800, modelA_largeCohortFee:1200, modelA_threshold:8, modelA_pctSmall:40 },
+  Aggressive:   { modelA_annualFee:1500, modelA_smallCohortFee:1100, modelA_largeCohortFee:1600, modelA_threshold:8, modelA_pctSmall:30 },
+};
+const MODEL_A_PRESET_NOTES = {
+  Conservative: 'Lower entry price. Easier sell to new orgs; smaller revenue per partner.',
+  Balanced:     'Middle-of-the-road rates. Current defaults.',
+  Aggressive:   'Higher rates targeting revenue growth. Expect more price pushback.',
+};
+
 function ModelAPanel({ state, calc, set }) {
   const s = state;
   const c = calc;
+  const activePreset = Object.keys(MODEL_A_PRESETS).find(p =>
+    Object.entries(MODEL_A_PRESETS[p]).every(([k,v]) => s[k] === v)
+  );
+  const applyPreset = (name) => {
+    const preset = MODEL_A_PRESETS[name];
+    Object.keys(preset).forEach(k => set(k, preset[k]));
+  };
   return (
     <div>
       <div style={{ background:TEAL, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
@@ -1349,28 +1512,48 @@ function ModelAPanel({ state, calc, set }) {
         <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Low annual license + pay per cohort delivered. Easy entry, scales with usage.</div>
       </div>
       <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
-          <InputField label="Annual license fee (flat)" value={s.modelA_annualFee} min={0} max={10000} step={100} onChange={v=>set('modelA_annualFee',v)} prefix="$" note="Per partner, not per instructor" />
-          <InputField label="Small cohort threshold" value={s.modelA_threshold} min={2} max={15} onChange={v=>set('modelA_threshold',v)} note="Below this = small cohort" />
-          <InputField label={'Small cohort fee (< '+s.modelA_threshold+')'} value={s.modelA_smallCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_smallCohortFee',v)} prefix="$" />
-          <InputField label={'Large cohort fee ('+s.modelA_threshold+'+ participants)'} value={s.modelA_largeCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_largeCohortFee',v)} prefix="$" />
-          <InputField label="% of cohorts that are small" value={s.modelA_pctSmall} min={0} max={100} onChange={v=>set('modelA_pctSmall',v)} unit="%" />
+        {/* Preset picker — one-click simplification for managers */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Pricing preset</div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {Object.keys(MODEL_A_PRESETS).map(p => (
+              <button key={p} onClick={()=>applyPreset(p)} style={{
+                flex:'1 1 140px', padding:'10px 14px', fontSize:13, fontWeight:700, borderRadius:8,
+                border:'1.5px solid '+(activePreset===p ? TEAL : GRAY200),
+                background: activePreset===p ? TEAL : 'white', color: activePreset===p ? 'white' : GRAY700,
+                cursor:'pointer', fontFamily:"'Inter',sans-serif"
+              }}>{p}</button>
+            ))}
+          </div>
+          <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginTop:6 }}>
+            {activePreset ? MODEL_A_PRESET_NOTES[activePreset] : 'Custom values. Pick a preset or adjust in Advanced settings below.'}
+          </div>
         </div>
 
-        <Toggle label="Enable pilot discount" value={s.modelA_pilotEnabled} onChange={v=>set('modelA_pilotEnabled',v)} />
-        {s.modelA_pilotEnabled && (
-          <div style={{ background:'#f0fdfa', border:'1px solid '+TEAL+'33', borderRadius:8, padding:14, marginBottom:12 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:TEAL, marginBottom:8 }}>Pilot Discount</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
-              <InputField label="Pilot annual fee" value={s.modelA_pilotFee} min={0} max={5000} step={50} onChange={v=>set('modelA_pilotFee',v)} prefix="$" />
-              <InputField label="Pilot cohort fee" value={s.modelA_pilotCohortFee} min={0} max={3000} step={25} onChange={v=>set('modelA_pilotCohortFee',v)} prefix="$" />
-              <InputField label="Pilot partners" value={s.modelA_pilotPartners} min={0} max={20} onChange={v=>set('modelA_pilotPartners',v)} />
-              <InputField label="Pilot duration (years)" value={s.modelA_pilotDuration} min={1} max={3} onChange={v=>set('modelA_pilotDuration',v)} />
-              <InputField label="% convert to full rate" value={s.modelA_pilotConvertPct} min={0} max={100} onChange={v=>set('modelA_pilotConvertPct',v)} unit="%" />
-            </div>
-            <div style={{ fontSize:12, color:TEAL, fontWeight:600, marginTop:4 }}>Pilot drag: {fmt(c.maPilotDrag)}/yr during pilot period</div>
+        <Accordion label="Advanced · customize Model A fees" hint="Fine-tune the individual knobs an analyst would turn" tone={TEAL}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
+            <InputField label="Annual license fee (flat)" value={s.modelA_annualFee} min={0} max={10000} step={100} onChange={v=>set('modelA_annualFee',v)} prefix="$" note="Per partner, not per instructor" />
+            <InputField label="Small cohort threshold" value={s.modelA_threshold} min={2} max={15} onChange={v=>set('modelA_threshold',v)} note="Below this = small cohort" />
+            <InputField label={'Small cohort fee (< '+s.modelA_threshold+')'} value={s.modelA_smallCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_smallCohortFee',v)} prefix="$" />
+            <InputField label={'Large cohort fee ('+s.modelA_threshold+'+ participants)'} value={s.modelA_largeCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelA_largeCohortFee',v)} prefix="$" />
+            <InputField label="% of cohorts that are small" value={s.modelA_pctSmall} min={0} max={100} onChange={v=>set('modelA_pctSmall',v)} unit="%" />
           </div>
-        )}
+
+          <Toggle label="Enable pilot discount" value={s.modelA_pilotEnabled} onChange={v=>set('modelA_pilotEnabled',v)} />
+          {s.modelA_pilotEnabled && (
+            <div style={{ background:'#f0fdfa', border:'1px solid '+TEAL+'33', borderRadius:8, padding:14, marginBottom:12 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:TEAL, marginBottom:8 }}>Pilot Discount</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 16px' }}>
+                <InputField label="Pilot annual fee" value={s.modelA_pilotFee} min={0} max={5000} step={50} onChange={v=>set('modelA_pilotFee',v)} prefix="$" />
+                <InputField label="Pilot cohort fee" value={s.modelA_pilotCohortFee} min={0} max={3000} step={25} onChange={v=>set('modelA_pilotCohortFee',v)} prefix="$" />
+                <InputField label="Pilot partners" value={s.modelA_pilotPartners} min={0} max={20} onChange={v=>set('modelA_pilotPartners',v)} />
+                <InputField label="Pilot duration (years)" value={s.modelA_pilotDuration} min={1} max={3} onChange={v=>set('modelA_pilotDuration',v)} />
+                <InputField label="% convert to full rate" value={s.modelA_pilotConvertPct} min={0} max={100} onChange={v=>set('modelA_pilotConvertPct',v)} unit="%" />
+              </div>
+              <div style={{ fontSize:12, color:TEAL, fontWeight:600, marginTop:4 }}>Pilot drag: {fmt(c.maPilotDrag)}/yr during pilot period</div>
+            </div>
+          )}
+        </Accordion>
 
         <SectionDivider label="vs. Current Model" />
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
@@ -1410,9 +1593,27 @@ function ModelAPanel({ state, calc, set }) {
   );
 }
 
+const MODEL_B_PRESETS = {
+  Conservative: { modelB_baseLicense:800,  modelB_standardPerCohort:550, modelB_growthPerCohort:450, modelB_addOnCohortFee:700 },
+  Balanced:     { modelB_baseLicense:1200, modelB_standardPerCohort:700, modelB_growthPerCohort:600, modelB_addOnCohortFee:900 },
+  Aggressive:   { modelB_baseLicense:1600, modelB_standardPerCohort:900, modelB_growthPerCohort:750, modelB_addOnCohortFee:1200 },
+};
+const MODEL_B_PRESET_NOTES = {
+  Conservative: 'Lower package pricing. Attractive to budget-conscious orgs; thinner margin per partner.',
+  Balanced:     'Middle-of-the-road package pricing. Current defaults.',
+  Aggressive:   'Higher package pricing. Maximizes revenue per partner; orgs may resist.',
+};
+
 function ModelBPanel({ state, calc, set }) {
   const s = state;
   const c = calc;
+  const activePreset = Object.keys(MODEL_B_PRESETS).find(p =>
+    Object.entries(MODEL_B_PRESETS[p]).every(([k,v]) => s[k] === v)
+  );
+  const applyPreset = (name) => {
+    const preset = MODEL_B_PRESETS[name];
+    Object.keys(preset).forEach(k => set(k, preset[k]));
+  };
   return (
     <div>
       <div style={{ background:PURPLE, color:'white', padding:'12px 16px', borderRadius:'10px 10px 0 0', fontWeight:700, fontSize:15 }}>
@@ -1420,6 +1621,24 @@ function ModelBPanel({ state, calc, set }) {
         <div style={{ fontSize:12, fontWeight:400, opacity:0.85, marginTop:2 }}>Bundled packages orgs can plan and budget around. Predictable for everyone.</div>
       </div>
       <Card style={{ borderRadius:'0 0 10px 10px', borderTop:'none' }}>
+        {/* Preset picker */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Pricing preset</div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {Object.keys(MODEL_B_PRESETS).map(p => (
+              <button key={p} onClick={()=>applyPreset(p)} style={{
+                flex:'1 1 140px', padding:'10px 14px', fontSize:13, fontWeight:700, borderRadius:8,
+                border:'1.5px solid '+(activePreset===p ? PURPLE : GRAY200),
+                background: activePreset===p ? PURPLE : 'white', color: activePreset===p ? 'white' : GRAY700,
+                cursor:'pointer', fontFamily:"'Inter',sans-serif"
+              }}>{p}</button>
+            ))}
+          </div>
+          <div style={{ fontSize:12, color:GRAY500, fontStyle:'italic', marginTop:6 }}>
+            {activePreset ? MODEL_B_PRESET_NOTES[activePreset] : 'Custom values. Pick a preset or adjust in Advanced settings below.'}
+          </div>
+        </div>
+
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px' }}>
           <InputField label="Base annual license fee" value={s.modelB_baseLicense} min={0} max={10000} step={50} onChange={v=>set('modelB_baseLicense',v)} prefix="$" note="Every partner pays this — includes 1 cohort" />
           <InputField label="Extra cohort (no package)" value={s.modelB_addOnCohortFee} min={0} max={5000} step={25} onChange={v=>set('modelB_addOnCohortFee',v)} prefix="$" note="Per additional cohort without a package deal" />
@@ -1571,13 +1790,15 @@ function OutlookTab({ state, calc, forecast, set }) {
           <InputField label="Reaccred year" value={s.reaccredYear} min={2025} max={2035} onChange={v=>set('reaccredYear',v)} />
           <InputField label="Reaccred cost" value={s.reaccredCost} min={0} max={100000} step={1000} onChange={v=>set('reaccredCost',v)} prefix="$" />
         </div>
-        <SectionDivider label="Annual Markup by Sub-category (applied to Program Budget)" />
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:'0 16px' }}>
-          {SUB_CATEGORIES.map(cat => (
-            <InputField key={cat} label={cat} value={(s.subCategoryMarkups||{})[cat] ?? 0} min={0} max={20} step={0.5}
-              onChange={v=>set('subCategoryMarkups', { ...(s.subCategoryMarkups||{}), [cat]: v })} unit="%" />
-          ))}
-        </div>
+        <Accordion label="Advanced · Annual markup by cost category" hint="Fine-tune how each part of the program budget inflates year over year">
+          <div style={{ fontSize:12, color:GRAY500, marginBottom:8 }}>Percentages applied annually to each sub-category of the Program Budget.</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:'0 16px' }}>
+            {SUB_CATEGORIES.map(cat => (
+              <InputField key={cat} label={cat} value={(s.subCategoryMarkups||{})[cat] ?? 0} min={0} max={20} step={0.5}
+                onChange={v=>set('subCategoryMarkups', { ...(s.subCategoryMarkups||{}), [cat]: v })} unit="%" />
+            ))}
+          </div>
+        </Accordion>
         <div style={{ display:'flex', gap:8, marginTop:8 }}>
           <label style={{ fontSize:12, fontWeight:600, color:GRAY700, marginRight:4 }}>Detailed forecast uses:</label>
           {[{k:'current',l:'Current Model',c:BLUE},{k:'a',l:'Model A',c:TEAL},{k:'b',l:'Model B',c:PURPLE}].map(o=>(
@@ -1640,39 +1861,37 @@ function OutlookTab({ state, calc, forecast, set }) {
 
       {/* Partner book evolution by state */}
       <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>Partner Book Evolution (by state)</div>
+        <div style={{ fontSize:14, fontWeight:700, color:GRAY900, marginBottom:4 }}>Partner Book Evolution</div>
         <div style={{ fontSize:11, color:GRAY500, marginBottom:10 }}>
-          Each org occupies exactly one state per year. PENDING = completed IPP but not yet licensed.
-          NEW_DORMANT = paid but never activated (Buffalo Sewer / NRG signal).
-          LAPSED may return within 3 years; otherwise flows to CHURNED_PERMANENT.
+          Where each org sits each year. "In pipeline" = finished a workshop but not yet licensed. "Paid, inactive" = licensed but hasn’t delivered a cohort. "Lapsed" orgs may return within 3 years; the rest flow to permanent churn.
         </div>
         <div style={{ width:'100%', height:280 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={years.map(y=>({
               name:y.label,
-              NEW_ACTIVE: Math.round(y.stateNewActive*10)/10,
-              NEW_DORMANT: Math.round(y.stateNewDormant*10)/10,
-              TENURED: Math.round(y.stateTenured*10)/10,
-              PENDING: Math.round(y.statePending*10)/10,
-              LAPSED: Math.round(y.stateLapsed*10)/10,
-              CHURNED_PERM: Math.round(y.stateChurnedCum*10)/10,
+              'New (active)': Math.round(y.stateNewActive*10)/10,
+              'Paid, inactive': Math.round(y.stateNewDormant*10)/10,
+              'Returning': Math.round(y.stateTenured*10)/10,
+              'In pipeline': Math.round(y.statePending*10)/10,
+              'Lapsed': Math.round(y.stateLapsed*10)/10,
+              'Left permanently': Math.round(y.stateChurnedCum*10)/10,
             }))} margin={{ top:5,right:20,bottom:5,left:20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRAY200} />
               <XAxis dataKey="name" fontSize={11} />
               <YAxis fontSize={11} />
               <Tooltip />
               <Legend wrapperStyle={{ fontSize:11 }} />
-              <Bar dataKey="NEW_ACTIVE" stackId="live" fill={GREEN} />
-              <Bar dataKey="NEW_DORMANT" stackId="live" fill={AMBER} />
-              <Bar dataKey="TENURED" stackId="live" fill={BLUE} />
-              <Bar dataKey="PENDING" stackId="pipeline" fill={TEAL} />
-              <Bar dataKey="LAPSED" stackId="risk" fill={ORANGE} />
-              <Bar dataKey="CHURNED_PERM" stackId="risk" fill={RED} />
+              <Bar dataKey="New (active)" stackId="live" fill={GREEN} />
+              <Bar dataKey="Paid, inactive" stackId="live" fill={AMBER} />
+              <Bar dataKey="Returning" stackId="live" fill={BLUE} />
+              <Bar dataKey="In pipeline" stackId="pipeline" fill={TEAL} />
+              <Bar dataKey="Lapsed" stackId="risk" fill={ORANGE} />
+              <Bar dataKey="Left permanently" stackId="risk" fill={RED} />
             </BarChart>
           </ResponsiveContainer>
         </div>
         <div style={{ fontSize:11, color:GRAY500, fontStyle:'italic', marginTop:6 }}>
-          "live" bar = active partner book (paying licensees this year). "pipeline" = pending conversions. "risk" = lapsed (recoverable) + permanent churn.
+          Left bar in each year = active partner book (paying licensees). Middle = pipeline (pending conversions). Right = risk (lapsed, still recoverable + permanent churn).
         </div>
       </Card>
 
@@ -1691,17 +1910,17 @@ function OutlookTab({ state, calc, forecast, set }) {
             <tbody>
               <tr><td style={{ ...tdS, textAlign:'left', fontWeight:600 }}>Partners (active book)</td>
                 {years.map(y=><td key={y.year} style={tdS}>{y.partners.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:GREEN, paddingLeft:18 }}>{'\u2192'} NEW_ACTIVE</td>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:GREEN, paddingLeft:18 }}>{'\u2192'} New (active)</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, color:GREEN }}>{y.stateNewActive.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:AMBER, paddingLeft:18 }}>{'\u2192'} NEW_DORMANT</td>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:AMBER, paddingLeft:18 }}>{'\u2192'} Paid, inactive</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, color:AMBER }}>{y.stateNewDormant.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:BLUE, paddingLeft:18 }}>{'\u2192'} TENURED</td>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:BLUE, paddingLeft:18 }}>{'\u2192'} Returning (tenured)</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, color:BLUE }}>{y.stateTenured.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:TEAL }}>Pending (pipeline)</td>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:TEAL }}>In pipeline (pending)</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, color:TEAL }}>{y.statePending.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:ORANGE }}>Lapsed (recoverable)</td>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:ORANGE }}>Lapsed (may return)</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, color:ORANGE }}>{y.stateLapsed.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
-              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:RED }}>Churned permanent (cum.)</td>
+              <tr><td style={{ ...tdS, textAlign:'left', fontWeight:500, color:RED }}>Left permanently (cum.)</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, color:RED }}>{y.stateChurnedCum.toFixed(1)}</td>)}<td style={tdS}>{'\u2014'}</td></tr>
               <tr style={{ background:'#f0f9ff' }}><td style={{ ...tdS, textAlign:'left', fontWeight:700, color:BLUE }}>Revenue</td>
                 {years.map(y=><td key={y.year} style={{ ...tdS, fontWeight:700, color:BLUE }}>{fmt(y.chosenRev)}</td>)}
