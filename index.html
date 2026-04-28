@@ -79,6 +79,67 @@ const TIERS = [
 
 const PROGRAM_AREAS = ['Accreditation & Governance','Program Administration','Instructor Support','IPP','Outreach & Marketing'];
 const SUB_CATEGORIES = ['Staff time','Fees','Contractual','Systems','Travel'];
+const STAFF_TIME_SUBCATEGORY = 'Staff time';
+
+// ─── ANNUAL BUDGETS: 6 periods (Current Year + 5 forecast years) ───
+// yearData[0] drives Current State totals; yearData[1..5] drive 5-Year Outlook forecast iterations.
+const BUDGET_YEAR_COUNT = 6;
+const BUDGET_YEAR_LABELS = ['Current Year', 'Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5'];
+const DEFAULT_RATE_ESCALATION_PCT = 5;
+
+const DEFAULT_STAFF_ROSTER = [
+  { id: 'kaitie',     name: 'Kaitie Evers',       baseRate: 110,    baseHours: 500 },
+  { id: 'allison',    name: 'Allison Lee',        baseRate: 154,    baseHours: 10  },
+  { id: 'amanda',     name: 'Amanda Pollack',     baseRate: 198,    baseHours: 30  },
+  { id: 'carol',      name: 'Carol Wong',         baseRate: 165,    baseHours: 15  },
+  { id: 'alexandria', name: 'Alexandria Wilkins', baseRate: 110,    baseHours: 30  },
+  { id: 'jordan',     name: 'Jordan Fox',         baseRate: 148.50, baseHours: 90  },
+  { id: 'audrey',     name: 'Audrey Casper',      baseRate: 110,    baseHours: 300 },
+];
+
+// Build the 6-year yearData scaffold for a freshly migrated/added line.
+// Staff-time lines get a single placeholder allocation seeded from the first staff member;
+// non-staff lines store the dollar amount directly per year.
+function buildDefaultYearData(line, roster) {
+  const r = roster && roster.length ? roster : DEFAULT_STAFF_ROSTER;
+  const yd = [];
+  const isStaff = line.subCategory === STAFF_TIME_SUBCATEGORY;
+  const fallback = r[0];
+  const placeholderHours = (isStaff && fallback && fallback.baseRate > 0)
+    ? Math.round((Number(line.amount)||0) / fallback.baseRate * 100) / 100
+    : 0;
+  for (let i = 0; i < BUDGET_YEAR_COUNT; i++) {
+    if (isStaff) {
+      yd.push({
+        allocations: placeholderHours > 0 ? [{ staffId: fallback.id, hours: placeholderHours }] : [],
+        amount: placeholderHours > 0 ? 0 : (Number(line.amount) || 0),
+      });
+    } else {
+      yd.push({ allocations: [], amount: Number(line.amount) || 0 });
+    }
+  }
+  return yd;
+}
+
+// Resolve a line's dollar amount for a given year. Staff-time allocations are priced at
+// the staff member's base rate compounded by escPct per year; non-staff lines use the
+// per-year amount directly. Falls back to the legacy flat `amount` if yearData missing.
+function computeLineAmount(line, yearIdx, roster, escPct) {
+  const yd = (line.yearData || [])[yearIdx];
+  const factor = Math.pow(1 + (Number(escPct)||0)/100, yearIdx);
+  if (!yd) return (Number(line.amount) || 0) * factor;
+  if (line.subCategory === STAFF_TIME_SUBCATEGORY) {
+    if (!Array.isArray(yd.allocations) || yd.allocations.length === 0) {
+      return Number(yd.amount) || 0;
+    }
+    return yd.allocations.reduce((sum, a) => {
+      const staff = (roster || []).find(r => r.id === a.staffId);
+      const rate = staff ? (Number(staff.baseRate) || 0) : 0;
+      return sum + (Number(a.hours)||0) * rate * factor;
+    }, 0);
+  }
+  return Number(yd.amount) || 0;
+}
 
 const DEFAULT_BUDGET_LINES = [
   // Accreditation & Governance — $40,425
@@ -255,6 +316,11 @@ const defaults = {
   // 0 = fall back to the computed budgetLines × sub-category markup.
   // Reaccred cost is layered on top of whichever value wins.
   forecastFixedCostOverrides: [0, 0, 0, 0, 0],
+  // ─── ANNUAL BUDGETS ───
+  // Editable staff roster (name, base hourly rate, base budgeted hours).
+  // baseRate is the Year 0 / Current rate; rateEscalationPct compounds it for forecast years.
+  staffRoster: DEFAULT_STAFF_ROSTER.map(r => ({ ...r })),
+  rateEscalationPct: DEFAULT_RATE_ESCALATION_PCT,
 };
 
 // Migration: convert legacy flat cost fields to budget lines, and fold the old
@@ -318,6 +384,22 @@ function migrateState(loaded) {
     copy('model_newIPPInstructors', 'model_ipp_participants');
     copy('model_renewalRate', 'model_year_2plus_renewal_rate');
     out._migratedStructuredPipelineV1 = true;
+  }
+
+  // ── One-shot migration: staff roster + per-year budget data ──
+  // Seeds the staff roster on first load and converts each budget line to a
+  // 6-slot yearData array. Staff-time lines get a single placeholder allocation
+  // pointing at the first staff member; non-staff lines store the dollar amount per year.
+  if (!Array.isArray(out.staffRoster) || out.staffRoster.length === 0) {
+    out.staffRoster = DEFAULT_STAFF_ROSTER.map(r => ({ ...r }));
+  }
+  if (out.rateEscalationPct == null) out.rateEscalationPct = DEFAULT_RATE_ESCALATION_PCT;
+  if (Array.isArray(out.budgetLines)) {
+    out.budgetLines = out.budgetLines.map(l => {
+      if (Array.isArray(l.yearData) && l.yearData.length === BUDGET_YEAR_COUNT) return l;
+      const yd = buildDefaultYearData(l, out.staffRoster);
+      return { ...l, yearData: yd };
+    });
   }
   return out;
 }
@@ -625,7 +707,7 @@ function PipelineRetentionCard({ state, calc, set, prefix='' }) {
   );
 }
 
-const TABS = ['Summary','Current State','What If','5-Year Outlook','Break-Even Analysis'];
+const TABS = ['Summary','Current State','Annual Budgets','What If','5-Year Outlook','Break-Even Analysis'];
 
 // Synchronous localStorage persistence so inputs survive refresh without waiting
 // for Supabase. Supabase still handles cross-device sync on a debounce.
@@ -642,7 +724,9 @@ const writeLocal = (state) => {
 function App() {
   const [state, setState] = useState(() => {
     const local = readLocal();
-    return local ? { ...defaults, ...migrateState(local) } : { ...defaults };
+    return local
+      ? { ...defaults, ...migrateState(local) }
+      : migrateState({ ...defaults });
   });
   const [activeTab, setActiveTab] = useState('Summary');
   const [whatIfModel, setWhatIfModel] = useState('pr');
@@ -733,11 +817,15 @@ function App() {
     const s = state;
     const ct = s.customTiers || [];
     const budgetLines = s.budgetLines || [];
-    const fixedTotal = budgetLines.reduce((sum, l) => sum + (Number(l.amount)||0), 0);
+    const roster = s.staffRoster || [];
+    const escPct = Number(s.rateEscalationPct) || 0;
+    // Current Year totals come from yearData[0]; rate escalation factor at yearIdx 0 is 1.0.
+    const lineAmt = (l) => computeLineAmount(l, 0, roster, escPct);
+    const fixedTotal = budgetLines.reduce((sum, l) => sum + lineAmt(l), 0);
     const budgetByArea = Object.fromEntries(PROGRAM_AREAS.map(a => [a, 0]));
     const budgetBySubCategory = Object.fromEntries(SUB_CATEGORIES.map(c => [c, 0]));
     budgetLines.forEach(l => {
-      const amt = Number(l.amount)||0;
+      const amt = lineAmt(l);
       if (budgetByArea[l.programArea] !== undefined) budgetByArea[l.programArea] += amt;
       if (budgetBySubCategory[l.subCategory] !== undefined) budgetBySubCategory[l.subCategory] += amt;
     });
@@ -877,7 +965,16 @@ function App() {
       const calendarYear = s.forecastStartYear + yr;
       const isReaccred = calendarYear === s.reaccredYear;
       const markups = s.subCategoryMarkups || {};
+      const roster = s.staffRoster || [];
+      const escPct = Number(s.rateEscalationPct) || 0;
+      // Forecast year N (1-indexed) reads yearData[N]. Staff allocations are priced at
+      // baseRate × (1 + escPct/100)^N; non-staff use the per-year amount directly.
+      // Falls back to legacy `subCategoryMarkups`-based escalation if a line is missing yearData.
+      const yearIdx = yr + 1;
       const budgetLinesEsc = (s.budgetLines||[]).reduce((sum, l) => {
+        if (Array.isArray(l.yearData) && l.yearData[yearIdx]) {
+          return sum + computeLineAmount(l, yearIdx, roster, escPct);
+        }
         const rate = markups[l.subCategory] != null ? markups[l.subCategory] : 0;
         return sum + (Number(l.amount)||0) * Math.pow(1 + rate/100, yr);
       }, 0);
@@ -1071,7 +1168,7 @@ function App() {
               </select>
             )}
             {activeSaveId && <button onClick={()=>{if(confirm('Delete "'+activeSaveName+'"?'))handleDelete(activeSaveId);}} style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+RED, background:'white', color:RED, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Delete</button>}
-            <button onClick={()=>{setState({...defaults});setActiveSaveId(null);setActiveSaveName('');}} style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Reset</button>
+            <button onClick={()=>{setState(migrateState({...defaults}));setActiveSaveId(null);setActiveSaveName('');}} style={{ padding:'6px 10px', fontSize:12, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY500, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Reset</button>
           </div>
         </div>
         {showSaveDialog && (
@@ -1105,6 +1202,7 @@ function App() {
       <div style={{ padding:'20px 24px', maxWidth:1200, margin:'0 auto' }}>
         {activeTab==='Summary' && <SummaryTab state={state} calc={calc} forecast={forecast} set={set} setActiveTab={setActiveTab} />}
         {activeTab==='Current State' && <CurrentStateTab state={state} calc={calc} set={set} setPartnerCount={setPartnerCount} setTierFee={setTierFee} editTierFees={editTierFees} setEditTierFees={setEditTierFees} resetFees={resetFees} />}
+        {activeTab==='Annual Budgets' && <AnnualBudgetsTab state={state} calc={calc} set={set} />}
         {activeTab==='What If' && <WhatIfTab state={state} calc={calc} set={set} whatIfModel={whatIfModel} setWhatIfModel={setWhatIfModel} />}
         {activeTab==='5-Year Outlook' && <OutlookTab state={state} calc={calc} forecast={forecast} set={set} />}
         {activeTab==='Break-Even Analysis' && <BreakEvenTab state={state} calc={calc} />}
@@ -1345,30 +1443,24 @@ function CurrentStateTab({ state, calc, set, setPartnerCount, setTierFee, editTi
   );
 }
 
-// ═══ PROGRAM BUDGET (inside Current State) ═══
+// ═══ PROGRAM BUDGET SUMMARY (inside Current State) ═══
+// Read-only view of the Current Year budget (yearData[0]). Editing happens on
+// the Annual Budgets tab so staff allocations and per-year numbers stay coherent.
 function ProgramBudgetSection({ state, calc, set }) {
   const lines = state.budgetLines || [];
+  const roster = state.staffRoster || [];
+  const escPct = Number(state.rateEscalationPct) || 0;
   const total = calc.fixedTotal;
-
-  const updateLine = (id, patch) => {
-    set('budgetLines', lines.map(l => l.id === id ? { ...l, ...patch } : l));
-  };
-  const removeLine = (id) => set('budgetLines', lines.filter(l => l.id !== id));
-  const addLine = (programArea) => set('budgetLines', [...lines, { id: Date.now() + Math.random(), programArea, subCategory: SUB_CATEGORIES[0], detail: '', amount: 0 }]);
-
-  const inputStyle = { padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:12, fontFamily:"'Inter',sans-serif", background:'white' };
-  const selectStyle = { ...inputStyle, width:140 };
-  const textStyle = { ...inputStyle, flex:1 };
-  const numStyle = { ...inputStyle, width:100, textAlign:'right' };
-  const xBtn = { padding:'2px 6px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' };
 
   return (
     <Card style={{ marginTop:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Program Budget</div>
+        <div>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Program Budget {'·'} Current Year</div>
+          <div style={{ fontSize:11, color:GRAY500 }}>Edit on the Annual Budgets tab {'—'} staff time is entered as {'{'}name {'×'} hours{'}'}.</div>
+        </div>
         <div style={{ fontSize:13, fontWeight:700, color:GRAY900 }}>Grand Total: {fmt(total)}</div>
       </div>
-      <div style={{ fontSize:12, color:GRAY500, marginBottom:12 }}>Your real line-item budget grouped by program area and sub-category. Drives the Fixed Total for every model.</div>
 
       {/* Rollup cards */}
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
@@ -1385,32 +1477,311 @@ function ProgramBudgetSection({ state, calc, set }) {
         })}
       </div>
 
-      {/* Grouped line-item table */}
+      {/* Read-only grouped summary */}
       {PROGRAM_AREAS.map(area => {
         const areaLines = lines.filter(l => l.programArea === area);
+        if (areaLines.length === 0) return null;
         return (
           <div key={area} style={{ marginBottom:10, borderTop:'1px solid '+GRAY200, paddingTop:8 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
               <div style={{ fontSize:13, fontWeight:700, color:GRAY900 }}>{area}</div>
               <div style={{ fontSize:12, fontWeight:700, color:GRAY700 }}>{fmt(calc.budgetByArea?.[area] || 0)}</div>
             </div>
-            {areaLines.map(l => (
-              <div key={l.id} style={{ display:'flex', gap:6, alignItems:'center', marginBottom:4 }}>
-                <select value={l.subCategory} onChange={e=>updateLine(l.id,{subCategory:e.target.value})} style={selectStyle}>
-                  {SUB_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <input type="text" value={l.detail||''} placeholder="Detail" onChange={e=>updateLine(l.id,{detail:e.target.value})} style={textStyle} />
-                <input type="number" value={l.amount} onChange={e=>updateLine(l.id,{amount:Number(e.target.value)||0})} style={numStyle} />
-                <button onClick={()=>removeLine(l.id)} style={xBtn} title="Remove">{'\u00D7'}</button>
-              </div>
-            ))}
-            <button onClick={()=>addLine(area)} style={{ padding:'4px 8px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
-              + Add line to {area}
-            </button>
+            {areaLines.map(l => {
+              const amt = computeLineAmount(l, 0, roster, escPct);
+              const yd = (l.yearData || [])[0];
+              const isStaff = l.subCategory === STAFF_TIME_SUBCATEGORY;
+              const allocSummary = isStaff && yd && Array.isArray(yd.allocations) && yd.allocations.length > 0
+                ? yd.allocations.map(a => {
+                    const staff = roster.find(r => r.id === a.staffId);
+                    return (staff && staff.name ? staff.name : '?') + ' (' + (Number(a.hours)||0) + 'h)';
+                  }).join(', ')
+                : null;
+              return (
+                <div key={l.id} style={{ display:'flex', gap:8, alignItems:'baseline', marginBottom:4, fontSize:12 }}>
+                  <span style={{ width:120, color:GRAY500 }}>{l.subCategory}</span>
+                  <span style={{ flex:1, color:GRAY700 }}>
+                    {l.detail || '(no label)'}
+                    {allocSummary && <span style={{ color:GRAY500, fontStyle:'italic', marginLeft:6 }}>{'\u00B7'} {allocSummary}</span>}
+                  </span>
+                  <span style={{ width:100, textAlign:'right', fontWeight:600, color:GRAY900 }}>{fmt(amt)}</span>
+                </div>
+              );
+            })}
           </div>
         );
       })}
     </Card>
+  );
+}
+
+// ═══ ANNUAL BUDGETS TAB ═══
+// Per-year editable program budget. Year 0 (Current Year) drives Current State totals;
+// Years 1–5 drive the 5-Year Outlook forecast. Staff-time lines are entered as
+// {staff member × hours}; the dollar amount is computed at the staff base rate
+// compounded by rateEscalationPct per year. Non-staff lines are entered as $/year.
+function StaffRosterCard({ state, set }) {
+  const roster = state.staffRoster || [];
+  const escPct = Number(state.rateEscalationPct) || 0;
+  const updateStaff = (id, patch) => set('staffRoster', roster.map(r => r.id === id ? { ...r, ...patch } : r));
+  const removeStaff = (id) => set('staffRoster', roster.filter(r => r.id !== id));
+  const addStaff = () => {
+    const id = 'staff_' + Date.now();
+    set('staffRoster', [...roster, { id, name: '', baseRate: 0, baseHours: 0 }]);
+  };
+
+  const inputStyle = { padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:12, fontFamily:"'Inter',sans-serif", background:'white' };
+  const numStyle = { ...inputStyle, width:90, textAlign:'right' };
+  const xBtn = { padding:'2px 6px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' };
+
+  return (
+    <Card style={{ marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+        <div>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Staff Roster</div>
+          <div style={{ fontSize:11, color:GRAY500 }}>Names, base hourly rate (Current Year), and base budgeted hours. Rates escalate annually per the rate below.</div>
+        </div>
+        <div style={{ width:170 }}>
+          <InputField label="Rate escalation/yr" value={escPct} min={0} max={20} step={0.5} onChange={v=>set('rateEscalationPct', v)} unit="%" />
+        </div>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1.5fr 100px 100px repeat(5, 90px) 28px', gap:6, alignItems:'center', fontSize:11, fontWeight:700, color:GRAY700, marginBottom:6, paddingBottom:6, borderBottom:'1px solid '+GRAY200 }}>
+        <div>Name</div>
+        <div style={{ textAlign:'right' }}>Base rate</div>
+        <div style={{ textAlign:'right' }}>Base hrs</div>
+        {[0,1,2,3,4].map(i => (
+          <div key={i} style={{ textAlign:'right', color:GRAY500 }}>Y{i+1} rate</div>
+        ))}
+        <div></div>
+      </div>
+      {roster.map(r => {
+        const ratesByYear = [1,2,3,4,5].map(i => (Number(r.baseRate)||0) * Math.pow(1 + escPct/100, i));
+        return (
+          <div key={r.id} style={{ display:'grid', gridTemplateColumns:'1.5fr 100px 100px repeat(5, 90px) 28px', gap:6, alignItems:'center', marginBottom:5 }}>
+            <input type="text" value={r.name||''} placeholder="Staff name" onChange={e=>updateStaff(r.id,{name:e.target.value})} style={inputStyle} />
+            <input type="number" value={r.baseRate||0} step={0.5} onChange={e=>updateStaff(r.id,{baseRate:Number(e.target.value)||0})} style={numStyle} />
+            <input type="number" value={r.baseHours||0} step={1} onChange={e=>updateStaff(r.id,{baseHours:Number(e.target.value)||0})} style={numStyle} />
+            {ratesByYear.map((rt, i) => (
+              <div key={i} style={{ fontSize:11, color:GRAY500, textAlign:'right' }}>${rt.toFixed(2)}</div>
+            ))}
+            <button onClick={()=>removeStaff(r.id)} style={xBtn} title="Remove">{'×'}</button>
+          </div>
+        );
+      })}
+      <button onClick={addStaff} style={{ padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", marginTop:4 }}>+ Add staff member</button>
+    </Card>
+  );
+}
+
+function AnnualBudgetsTab({ state, calc, set }) {
+  const s = state;
+  const [yearIdx, setYearIdx] = useState(0);
+  const lines = s.budgetLines || [];
+  const roster = s.staffRoster || [];
+  const escPct = Number(s.rateEscalationPct) || 0;
+  const startYear = Number(s.forecastStartYear) || 2025;
+  // Subtab labels: Current Year (today) + Year 1..5 of forecast.
+  // Calendar year display: Current = startYear, Y1..Y5 = startYear + 1..5.
+  const subtabs = BUDGET_YEAR_LABELS.map((lbl, i) => ({
+    idx: i,
+    label: lbl,
+    calendarYear: i === 0 ? startYear : startYear + i,
+  }));
+
+  const ensureYearData = (line) => {
+    if (Array.isArray(line.yearData) && line.yearData.length === BUDGET_YEAR_COUNT) return line;
+    return { ...line, yearData: buildDefaultYearData(line, roster) };
+  };
+  const updateLine = (id, patch) => {
+    set('budgetLines', lines.map(l => l.id === id ? { ...ensureYearData(l), ...patch } : l));
+  };
+  const updateYearData = (id, idx, patch) => {
+    set('budgetLines', lines.map(l => {
+      if (l.id !== id) return l;
+      const lf = ensureYearData(l);
+      const next = [...lf.yearData];
+      next[idx] = { ...next[idx], ...patch };
+      return { ...lf, yearData: next };
+    }));
+  };
+  const updateAllocation = (id, idx, allocIdx, patch) => {
+    set('budgetLines', lines.map(l => {
+      if (l.id !== id) return l;
+      const lf = ensureYearData(l);
+      const next = [...lf.yearData];
+      const yd = next[idx] || { allocations: [], amount: 0 };
+      const allocs = [...(yd.allocations || [])];
+      allocs[allocIdx] = { ...allocs[allocIdx], ...patch };
+      next[idx] = { ...yd, allocations: allocs };
+      return { ...lf, yearData: next };
+    }));
+  };
+  const addAllocation = (id, idx) => {
+    set('budgetLines', lines.map(l => {
+      if (l.id !== id) return l;
+      const lf = ensureYearData(l);
+      const next = [...lf.yearData];
+      const yd = next[idx] || { allocations: [], amount: 0 };
+      const allocs = [...(yd.allocations || [])];
+      allocs.push({ staffId: roster[0]?.id || '', hours: 0 });
+      next[idx] = { ...yd, allocations: allocs };
+      return { ...lf, yearData: next };
+    }));
+  };
+  const removeAllocation = (id, idx, allocIdx) => {
+    set('budgetLines', lines.map(l => {
+      if (l.id !== id) return l;
+      const lf = ensureYearData(l);
+      const next = [...lf.yearData];
+      const yd = next[idx] || { allocations: [], amount: 0 };
+      const allocs = [...(yd.allocations || [])];
+      allocs.splice(allocIdx, 1);
+      next[idx] = { ...yd, allocations: allocs };
+      return { ...lf, yearData: next };
+    }));
+  };
+  const removeLine = (id) => set('budgetLines', lines.filter(l => l.id !== id));
+  const addLine = (programArea) => {
+    const newLine = { id: Date.now() + Math.random(), programArea, subCategory: SUB_CATEGORIES[0], detail: '', amount: 0 };
+    set('budgetLines', [...lines, ensureYearData(newLine)]);
+  };
+  const copyFromYear = (srcIdx, dstIdx) => {
+    set('budgetLines', lines.map(l => {
+      const lf = ensureYearData(l);
+      const next = [...lf.yearData];
+      const src = next[srcIdx];
+      if (src) next[dstIdx] = { allocations: (src.allocations || []).map(a => ({ ...a })), amount: src.amount || 0 };
+      return { ...lf, yearData: next };
+    }));
+  };
+
+  const yearTotal = lines.reduce((sum, l) => sum + computeLineAmount(l, yearIdx, roster, escPct), 0);
+  const totalsByYear = subtabs.map(t => lines.reduce((sum, l) => sum + computeLineAmount(l, t.idx, roster, escPct), 0));
+
+  const inputStyle = { padding:'5px 8px', border:'1px solid '+GRAY200, borderRadius:6, fontSize:12, fontFamily:"'Inter',sans-serif", background:'white' };
+  const selectStyle = { ...inputStyle, width:140 };
+  const textStyle = { ...inputStyle, flex:1, minWidth:0 };
+  const numStyle = { ...inputStyle, width:100, textAlign:'right' };
+  const xBtn = { padding:'2px 6px', fontSize:13, border:'1px solid '+GRAY200, borderRadius:6, background:'white', color:RED, cursor:'pointer' };
+
+  return (
+    <div>
+      <div style={{ fontSize:13, color:GRAY500, marginBottom:16 }}>
+        Per-year program budget. Each Staff time line is entered as one or more {'{'}staff × hours{'}'} allocations and priced at the staff member's base rate compounded by the rate-escalation %/yr. Non-staff lines are entered as $/year.
+      </div>
+
+      <StaffRosterCard state={state} set={set} />
+
+      {/* Year subtab selector + per-year totals strip */}
+      <Card style={{ marginBottom:16 }}>
+        <div style={{ display:'flex', gap:6, marginBottom:10, flexWrap:'wrap' }}>
+          {subtabs.map(t => (
+            <button key={t.idx} onClick={()=>setYearIdx(t.idx)} style={{
+              padding:'8px 14px', fontSize:12, fontWeight:600, borderRadius:6,
+              border:'1px solid '+(yearIdx===t.idx?BLUE:GRAY200),
+              background:yearIdx===t.idx?BLUE:'white',
+              color:yearIdx===t.idx?'white':GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              <div>{t.label}</div>
+              <div style={{ fontSize:10, opacity:0.85, marginTop:2 }}>{t.calendarYear}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:8 }}>
+          {subtabs.map((t, i) => (
+            <div key={t.idx} style={{ background: yearIdx===t.idx ? '#eff6ff' : GRAY50, border:'1px solid '+(yearIdx===t.idx?BLUE:GRAY200), borderRadius:6, padding:'6px 8px' }}>
+              <div style={{ fontSize:10, color:GRAY500, textTransform:'uppercase', letterSpacing:'0.05em' }}>{t.label}</div>
+              <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>{fmt(totalsByYear[i])}</div>
+            </div>
+          ))}
+        </div>
+        {yearIdx > 0 && (
+          <div style={{ display:'flex', gap:8, marginTop:10 }}>
+            <button onClick={()=>copyFromYear(yearIdx-1, yearIdx)} style={{ padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              Copy from {subtabs[yearIdx-1].label}
+            </button>
+            <button onClick={()=>copyFromYear(0, yearIdx)} style={{ padding:'5px 10px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px solid '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+              Copy from Current Year
+            </button>
+          </div>
+        )}
+      </Card>
+
+      {/* Budget grid for the selected year */}
+      <Card>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>{subtabs[yearIdx].label} Budget · {subtabs[yearIdx].calendarYear}</div>
+            <div style={{ fontSize:11, color:GRAY500 }}>Edit allocations and amounts for this year. Other years are independent.</div>
+          </div>
+          <div style={{ fontSize:14, fontWeight:700, color:GRAY900 }}>Grand Total: {fmt(yearTotal)}</div>
+        </div>
+
+        {PROGRAM_AREAS.map(area => {
+          const areaLines = lines.filter(l => l.programArea === area);
+          const areaTotal = areaLines.reduce((sum, l) => sum + computeLineAmount(l, yearIdx, roster, escPct), 0);
+          return (
+            <div key={area} style={{ marginBottom:12, borderTop:'1px solid '+GRAY200, paddingTop:8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:GRAY900 }}>{area}</div>
+                <div style={{ fontSize:12, fontWeight:700, color:GRAY700 }}>{fmt(areaTotal)}</div>
+              </div>
+
+              {areaLines.map(l => {
+                const lf = (Array.isArray(l.yearData) && l.yearData.length === BUDGET_YEAR_COUNT) ? l : ensureYearData(l);
+                const yd = lf.yearData[yearIdx] || { allocations: [], amount: 0 };
+                const isStaff = lf.subCategory === STAFF_TIME_SUBCATEGORY;
+                const lineAmt = computeLineAmount(lf, yearIdx, roster, escPct);
+                return (
+                  <div key={lf.id} style={{ marginBottom:8, padding:'8px 10px', background:GRAY50, borderRadius:6, border:'1px solid '+GRAY200 }}>
+                    <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom: isStaff ? 6 : 0 }}>
+                      <select value={lf.subCategory} onChange={e=>updateLine(lf.id,{subCategory:e.target.value})} style={selectStyle}>
+                        {SUB_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input type="text" value={lf.detail||''} placeholder="Detail" onChange={e=>updateLine(lf.id,{detail:e.target.value})} style={textStyle} />
+                      {!isStaff && (
+                        <input type="number" value={yd.amount||0} step={50} onChange={e=>updateYearData(lf.id, yearIdx, { amount: Number(e.target.value)||0 })} style={numStyle} />
+                      )}
+                      {isStaff && (
+                        <span style={{ width:100, fontSize:13, fontWeight:700, color:GRAY900, textAlign:'right' }}>{fmt(lineAmt)}</span>
+                      )}
+                      <button onClick={()=>removeLine(lf.id)} style={xBtn} title="Remove line">{'×'}</button>
+                    </div>
+
+                    {isStaff && (
+                      <div style={{ marginLeft:0, paddingLeft:10, borderLeft:'2px solid '+GRAY200 }}>
+                        {(yd.allocations || []).map((a, ai) => {
+                          const staff = roster.find(r => r.id === a.staffId);
+                          const rate = staff ? (Number(staff.baseRate)||0) * Math.pow(1 + escPct/100, yearIdx) : 0;
+                          const subtotal = (Number(a.hours)||0) * rate;
+                          return (
+                            <div key={ai} style={{ display:'flex', gap:6, alignItems:'center', marginBottom:4, fontSize:12 }}>
+                              <select value={a.staffId||''} onChange={e=>updateAllocation(lf.id, yearIdx, ai, { staffId: e.target.value })} style={{ ...inputStyle, width:160 }}>
+                                <option value="">— select staff —</option>
+                                {roster.map(r => <option key={r.id} value={r.id}>{r.name||'(unnamed)'}</option>)}
+                              </select>
+                              <span style={{ color:GRAY500 }}>×</span>
+                              <input type="number" value={a.hours||0} step={1} placeholder="hours" onChange={e=>updateAllocation(lf.id, yearIdx, ai, { hours: Number(e.target.value)||0 })} style={{ ...inputStyle, width:80, textAlign:'right' }} />
+                              <span style={{ color:GRAY500 }}>hrs @ ${rate.toFixed(2)}/hr</span>
+                              <span style={{ marginLeft:'auto', fontWeight:600, color:GRAY900 }}>{fmt(subtotal)}</span>
+                              <button onClick={()=>removeAllocation(lf.id, yearIdx, ai)} style={xBtn} title="Remove">{'×'}</button>
+                            </div>
+                          );
+                        })}
+                        <button onClick={()=>addAllocation(lf.id, yearIdx)} style={{ padding:'3px 8px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:'white', color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif", marginTop:2 }}>+ Add staff allocation</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              <button onClick={()=>addLine(area)} style={{ padding:'4px 8px', fontSize:11, fontWeight:600, borderRadius:6, border:'1px dashed '+GRAY200, background:GRAY50, color:GRAY700, cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>
+                + Add line to {area}
+              </button>
+            </div>
+          );
+        })}
+      </Card>
+    </div>
   );
 }
 
